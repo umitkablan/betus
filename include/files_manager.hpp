@@ -59,10 +59,11 @@ public:
 
     size_t Size() const { return all_fnames_.size(); }
     bool HasFile(const std::string& uuid) const;
+    std::streamoff GetOffset(const std::string& uuid) const;
     size_t Write(const std::string& uuid,  std::streamoff offset_sz, const boost::beast::multi_buffer& body);
 
 private:
-    std::string MakeFPath(const std::string_view& sv)
+    std::string MakeFPath(const std::string_view& sv) const
     {
         auto ret = dirpath_ + '/';
         ret += sv;

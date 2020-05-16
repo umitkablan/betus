@@ -80,6 +80,20 @@ bool FilesManager::HasFile(const std::string& uuid) const
     return all_fnames_.count(uuid) > 0;
 }
 
+std::streamoff FilesManager::GetOffset(const std::string& uuid) const
+{
+    std::ifstream md_istr(MakeFPath(uuid + METADATA_FNAME_SUFFIX));
+    if (!md_istr.is_open())
+        return -1;
+    md_istr.seekg(0, std::ios_base::beg);
+
+    std::streamoff sz;
+    md_istr.read(reinterpret_cast<char*>(&sz), sizeof(sz));
+    if (md_istr.bad())
+        sz = -1;
+    return sz;
+}
+
 size_t FilesManager::Write(const std::string& uuid, std::streamoff offset_sz, const boost::beast::multi_buffer& body)
 {
     std::fstream dt_ostr(MakeFPath(uuid));

@@ -96,3 +96,50 @@ TEST_CASE( "Basic with regular writable directory", "[FilesManager]" )
     }
 }
 
+TEST_CASE( "Write offset", "[FilesManager]" )
+{
+    namespace beast = boost::beast;
+
+    tus::FilesManager fm(".");
+
+    SECTION( "-1 when file not exists" )
+    {
+        REQUIRE(fm.GetOffset("nott-exis-tent-file") == -1);
+    }
+
+    SECTION( "Write and get offset" )
+    {
+        std::string dt_fname, md_fname, f_uuid;
+        {
+            auto res = fm.NewTmpFilesResource();
+            auto& om = res.MetadataFstream();
+            CHECK(om);
+            om << "test1test1test1" << std::endl;
+            auto& od = res.DataFstream(1000);
+            CHECK(od);
+            dt_fname = res.MetadataPath();
+            md_fname = res.DataPath();
+            f_uuid = res.Uuid();
+
+            fm.Persist(res);
+        }
+        CHECK(fm.GetOffset(f_uuid) == 0);
+
+        {
+            beast::multi_buffer mb(100);
+            auto mutable_bufs = mb.prepare(100);
+            auto sz =  (*mutable_bufs.begin()).size();
+            char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
+            for (size_t i = 0; i < sz; ++i) dat[i] = 'g';
+            mb.commit(100);
+
+            CHECK(fm.Write(f_uuid, 0, mb) == 100);
+        }
+        CHECK(fm.GetOffset(f_uuid) == 100);
+
+        ::remove(dt_fname.c_str());
+        ::remove(md_fname.c_str());
+        REQUIRE(fm.Size() == 1);
+    }
+}
+

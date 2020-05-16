@@ -181,6 +181,17 @@ void TusManager::processPatch(const http::request<http::dynamic_body>& req,
         resp.result(http::status::not_found);
         return;
     }
+    auto saved_offset = files_man_.GetOffset(fileUUID);
+    if (saved_offset < 0)
+    {
+        resp.result(http::status::not_found);
+        return;
+    }
+    if (static_cast<size_t>(saved_offset) != offset_val)
+    {
+        resp.result(http::status::conflict);
+        return;
+    }
     auto res = files_man_.Write(fileUUID, offset_val, req.body());
     if (res < 1)
     {
