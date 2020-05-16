@@ -64,6 +64,10 @@ http::response<http::dynamic_body> TusManager::MakeResponse(const http::request<
         processOptions(req, resp);
         break;
 
+    case http::verb::head:
+        processHead(req, resp);
+        break;
+
     case http::verb::post:
         processPost(req, resp);
         break;
@@ -113,6 +117,35 @@ void TusManager::processOptions(const http::request<http::dynamic_body>& req,
     resp.result(http::status::no_content);
 }
 
+void TusManager::processHead(const http::request<http::dynamic_body>& req,
+                             http::response<http::dynamic_body>& resp)
+{
+    if (!Common_Checks(req, resp)) return;
+
+    const std::string fileUUID(req.target().begin() + strlen("/files/"), req.target().end());
+    if (!files_man_.HasFile(fileUUID))
+    {
+        resp.result(http::status::gone);
+        return;
+    }
+    const auto md = files_man_.GetMetadata(fileUUID);
+    if (md.offset < 0)
+    {
+        resp.result(http::status::gone);
+        return;
+    }
+
+    resp.set(TAG_TUS_RESUMABLE, "1.0.0");
+    resp.set(TAG_UPLOAD_OFFSET, std::to_string(md.offset));
+    if (md.length > 0)
+        resp.set(TAG_UPLOAD_LENGTH, std::to_string(md.length));
+    if (!md.comment.empty())
+        resp.set(TAG_UPLOAD_METADATA, md.comment);
+
+    resp.set(http::field::cache_control, "no-store");
+    resp.result(http::status::created);
+}
+
 void TusManager::processPost(const http::request<http::dynamic_body>& req,
                              http::response<http::dynamic_body>& resp)
 {
@@ -129,8 +162,7 @@ void TusManager::processPost(const http::request<http::dynamic_body>& req,
     auto newres = files_man_.NewTmpFilesResource();
     {
         const auto [md_found, mtdata] = Parse_From_Req(req, TAG_UPLOAD_METADATA);
-        auto& o = newres.MetadataFstream();
-        if (md_found && o.good()) o << mtdata << std::endl;
+        auto& o = newres.MetadataFstream(uploadlen, mtdata);
         if (!o.good())
         {
             std::cerr << "write error: " << newres.MetadataPath() << " couldn't be written/opened" << std::endl;
@@ -181,13 +213,13 @@ void TusManager::processPatch(const http::request<http::dynamic_body>& req,
         resp.result(http::status::not_found);
         return;
     }
-    auto saved_offset = files_man_.GetOffset(fileUUID);
-    if (saved_offset < 0)
+    const auto md = files_man_.GetMetadata(fileUUID);
+    if (md.offset < 0)
     {
         resp.result(http::status::not_found);
         return;
     }
-    if (static_cast<size_t>(saved_offset) != offset_val)
+    if (static_cast<size_t>(md.offset) != offset_val)
     {
         resp.result(http::status::conflict);
         return;

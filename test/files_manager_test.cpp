@@ -104,18 +104,20 @@ TEST_CASE( "Write offset", "[FilesManager]" )
 
     SECTION( "-1 when file not exists" )
     {
-        REQUIRE(fm.GetOffset("nott-exis-tent-file") == -1);
+        auto md = fm.GetMetadata("nott-exis-tent-file");
+        REQUIRE(md.offset == -1);
+        REQUIRE(md.length == 0);
+        REQUIRE(md.comment.empty());
     }
 
-    SECTION( "Write and get offset" )
+    SECTION( "empty metadata" )
     {
         std::string dt_fname, md_fname, f_uuid;
         {
             auto res = fm.NewTmpFilesResource();
             auto& om = res.MetadataFstream();
             CHECK(om);
-            om << "test1test1test1" << std::endl;
-            auto& od = res.DataFstream(1000);
+            auto& od = res.DataFstream(1007);
             CHECK(od);
             dt_fname = res.MetadataPath();
             md_fname = res.DataPath();
@@ -123,7 +125,35 @@ TEST_CASE( "Write offset", "[FilesManager]" )
 
             fm.Persist(res);
         }
-        CHECK(fm.GetOffset(f_uuid) == 0);
+        auto md = fm.GetMetadata(f_uuid);
+        REQUIRE(md.offset == 0);
+        REQUIRE(md.length == 0);
+        REQUIRE(md.comment.empty());
+
+        ::remove(dt_fname.c_str());
+        ::remove(md_fname.c_str());
+        REQUIRE(fm.Size() == 1);
+    }
+
+    SECTION( "Write and get offset" )
+    {
+        std::string dt_fname, md_fname, f_uuid;
+        {
+            auto res = fm.NewTmpFilesResource();
+            auto& om = res.MetadataFstream(100, "write and get offset");
+            CHECK(om);
+            auto& od = res.DataFstream(1007);
+            CHECK(od);
+            dt_fname = res.MetadataPath();
+            md_fname = res.DataPath();
+            f_uuid = res.Uuid();
+
+            fm.Persist(res);
+        }
+        auto md = fm.GetMetadata(f_uuid);
+        REQUIRE(md.offset == 0);
+        REQUIRE(md.length == 100);
+        REQUIRE(md.comment.compare("write and get offset") == 0);
 
         {
             beast::multi_buffer mb(100);
@@ -135,7 +165,10 @@ TEST_CASE( "Write offset", "[FilesManager]" )
 
             CHECK(fm.Write(f_uuid, 0, mb) == 100);
         }
-        CHECK(fm.GetOffset(f_uuid) == 100);
+        md = fm.GetMetadata(f_uuid);
+        REQUIRE(md.offset == 100);
+        REQUIRE(md.length == 100);
+        REQUIRE(md.comment.compare("write and get offset") == 0);
 
         ::remove(dt_fname.c_str());
         ::remove(md_fname.c_str());

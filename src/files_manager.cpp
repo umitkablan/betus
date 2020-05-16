@@ -5,6 +5,7 @@
 #include <fstream>
 #include <ios>
 #include <iostream>
+#include <string>
 
 namespace tus
 {
@@ -38,7 +39,7 @@ TmpFilesResource::~TmpFilesResource() noexcept
     files_man_.rmUniqueFileName(uuid_);
 }
 
-std::ofstream& TmpFilesResource::MetadataFstream()
+std::ofstream& TmpFilesResource::MetadataFstream(size_t length, const std::string_view& sv)
 {
     assert(md_fpath_.empty());
 
@@ -46,7 +47,9 @@ std::ofstream& TmpFilesResource::MetadataFstream()
     md_ostr_.open(md_fpath_);
     std::streamoff sz = 0;
     md_ostr_.write(reinterpret_cast<const char*>(&sz), sizeof(sz));
+    md_ostr_.write(reinterpret_cast<const char*>(&length), sizeof(length));
     md_ostr_ << std::endl;
+    if (!sv.empty() && md_ostr_.good()) md_ostr_ << sv << std::endl;
     return md_ostr_;
 }
 
@@ -80,18 +83,26 @@ bool FilesManager::HasFile(const std::string& uuid) const
     return all_fnames_.count(uuid) > 0;
 }
 
-std::streamoff FilesManager::GetOffset(const std::string& uuid) const
+Metadata FilesManager::GetMetadata(const std::string& uuid) const
 {
+    Metadata ret{ -1, 0, ""};
+
     std::ifstream md_istr(MakeFPath(uuid + METADATA_FNAME_SUFFIX));
     if (!md_istr.is_open())
-        return -1;
+        return ret;
     md_istr.seekg(0, std::ios_base::beg);
 
-    std::streamoff sz;
-    md_istr.read(reinterpret_cast<char*>(&sz), sizeof(sz));
+    md_istr.read(reinterpret_cast<char*>(&ret.offset), sizeof(ret.offset));
     if (md_istr.bad())
-        sz = -1;
-    return sz;
+        ret.offset = -1;
+    md_istr.read(reinterpret_cast<char*>(&ret.length), sizeof(ret.length));
+    if (md_istr.bad())
+        ret.length = 0;
+    std::getline(md_istr, ret.comment);
+    assert(ret.comment.empty());
+    std::getline(md_istr, ret.comment);
+
+    return ret;
 }
 
 size_t FilesManager::Write(const std::string& uuid, std::streamoff offset_sz, const boost::beast::multi_buffer& body)

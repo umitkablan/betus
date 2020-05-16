@@ -36,6 +36,8 @@ public:
 private:
     void processOptions(const boost::beast::http::request<boost::beast::http::dynamic_body>& req,
                         boost::beast::http::response<boost::beast::http::dynamic_body>& resp);
+    void processHead(const boost::beast::http::request<boost::beast::http::dynamic_body>& req,
+                     boost::beast::http::response<boost::beast::http::dynamic_body>& resp);
     void processPost(const boost::beast::http::request<boost::beast::http::dynamic_body>& req,
                      boost::beast::http::response<boost::beast::http::dynamic_body>& resp);
     void processPatch(const boost::beast::http::request<boost::beast::http::dynamic_body>& req,
