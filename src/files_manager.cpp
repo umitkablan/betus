@@ -89,7 +89,6 @@ size_t FilesManager::Write(const std::string& uuid, std::streamoff offset_sz, co
     dt_ostr.seekp(offset_sz, std::ios_base::beg);
     assert(offset_sz == dt_ostr.tellp());
 
-    md_ostr.seekp(0, std::ios_base::end);
     const auto& buf = body.cdata();
     size_t ret = 0;
     for (const auto& constbuf : buf)

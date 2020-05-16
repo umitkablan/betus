@@ -52,10 +52,6 @@ http::response<http::dynamic_body> TusManager::MakeResponse(const http::request<
     resp.keep_alive(false);
     resp.set(http::field::server, "BeTus 0.1");
 
-    std::cout << req.method_string() << "--" << req.target() << std::endl;
-    for (const auto& i : req) std::cout << i.name_string() << "->" << i.value() << std::endl;
-    std::cout << std::endl;
-
     switch (req.method())
     {
     case http::verb::post:

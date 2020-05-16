@@ -6,9 +6,10 @@
 
 #include <catch2/catch.hpp>
 
-TEST_CASE( "FilesManager_On_Dir_SysRoot_NonAccess", "[single-file]" )
+TEST_CASE( "Dir_SysRoot_NonAccess", "[FilesManager]" )
 {
     tus::FilesManager fm("/");
+
     {
         auto res = fm.NewTmpFilesResource();
         REQUIRE(!res.Uuid().empty());
@@ -17,6 +18,7 @@ TEST_CASE( "FilesManager_On_Dir_SysRoot_NonAccess", "[single-file]" )
         REQUIRE(fm.Size() == 1);
     }
     REQUIRE(fm.Size() == 0);
+
     {
         auto res = fm.NewTmpFilesResource();
         auto& om = res.MetadataFstream();
@@ -28,9 +30,10 @@ TEST_CASE( "FilesManager_On_Dir_SysRoot_NonAccess", "[single-file]" )
     REQUIRE(fm.Size() == 0);
 }
 
-TEST_CASE( "FilesManager_On_Regular_Dir", "[single-file]" )
+TEST_CASE( "Regular_Dir", "[FilesManager]" )
 {
     tus::FilesManager fm(".");
+
     {
         auto res = fm.NewTmpFilesResource();
         REQUIRE(!res.Uuid().empty());
@@ -72,12 +75,12 @@ TEST_CASE( "FilesManager_On_Regular_Dir", "[single-file]" )
         md_fname = res.DataPath();
         fm.Persist(res);
     }
+    REQUIRE(fm.Size() == 1);
     {
         std::fstream dt_fstr(dt_fname);
         REQUIRE(!!dt_fstr);
         std::fstream md_fstr(md_fname);
         REQUIRE(!!dt_fstr);
     }
-    REQUIRE(fm.Size() == 1);
 }
 

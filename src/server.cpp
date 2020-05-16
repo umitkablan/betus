@@ -1,17 +1,12 @@
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/beast/version.hpp>
-#include <boost/asio.hpp>
 
 #include "include/tus_manager.hpp"
 
-#include <charconv>
 #include <chrono>
-#include <cstdlib>
-#include <ctime>
 #include <iostream>
 #include <memory>
-#include <string>
 
 namespace beast = boost::beast;
 namespace http = beast::http;
@@ -41,7 +36,6 @@ public:
 
     void handle_request()
     {
-        std::cout << "handle requiest.." << std::endl;
         auto self = shared_from_this();
 
         read_reply_request_async(self);
@@ -51,11 +45,9 @@ public:
 private:
     void read_reply_request_async(const std::shared_ptr<HttpConnection>& self)
     {
-        std::cout << "async read.." << std::endl;
         http::async_read( socket_, buffer_, request_,
                           [this, self](beast::error_code ec, std::size_t bytes_transferred)
         {
-            std::cout << "async reeed.." << ec << " " << bytes_transferred << std::endl;
             boost::ignore_unused(bytes_transferred);
             if (!ec)
             {
