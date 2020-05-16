@@ -224,7 +224,7 @@ Patch_Checks(const http::request<http::dynamic_body>& req,
     if (!ct_found || ct_val != TusManager::PATCH_EXPECTED_CONTENT_TYPE)
     {
         // Content-Type not found or wrong
-        resp.result(http::status::bad_request);
+        resp.result(http::status::unsupported_media_type);
         return ret;
     }
     const auto [clen_found, clen_val] = Parse_Number_From_Req<size_t>(req, http::field::content_length);
