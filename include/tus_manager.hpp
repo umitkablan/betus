@@ -20,6 +20,7 @@ public:
     static const std::string TAG_TUS_VERSION;
     static const std::string TAG_TUS_MAXSZ;
     static const std::string TAG_TUS_EXTENSION;
+    static const std::string TAG_TUS_CHECKSUM_ALG;
     static const std::string TAG_UPLOAD_LENGTH;
     static const std::string TAG_UPLOAD_METADATA;
     static const std::string TAG_UPLOAD_OFFSET;
@@ -28,6 +29,8 @@ public:
     static const std::string TUS_SUPPORTED_VERSION;
     static const std::string TUS_SUPPORTED_VERSIONS;
     static const std::string TUS_SUPPORTED_EXTENSIONS;
+    static const std::string TUS_SUPPORTED_CHECKSUM;
+    static const std::string TUS_SUPPORTED_CHECKSUMS;
     static const std::string TUS_SUPPORTED_MAXSZ;
     static const std::string PATCH_EXPECTED_CONTENT_TYPE;
 

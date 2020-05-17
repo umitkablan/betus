@@ -52,6 +52,7 @@ const std::string TusManager::TAG_TUS_RESUMABLE   = "Tus-Resumable";
 const std::string TusManager::TAG_TUS_VERSION     = "Tus-Version";
 const std::string TusManager::TAG_TUS_MAXSZ       = "Tus-Max-Size";
 const std::string TusManager::TAG_TUS_EXTENSION   = "Tus-Extension";
+const std::string TusManager::TAG_TUS_CHECKSUM_ALG = "Tus-Checksum-Algorithm";
 const std::string TusManager::TAG_UPLOAD_LENGTH   = "Upload-Length";
 const std::string TusManager::TAG_UPLOAD_METADATA = "Upload-Metadata";
 const std::string TusManager::TAG_UPLOAD_OFFSET   = "Upload-Offset";
@@ -60,6 +61,8 @@ const std::string TusManager::TAG_UPLOAD_CHECKSUM = "Upload-Checksum";
 const std::string TusManager::TUS_SUPPORTED_VERSION       = "1.0.0";
 const std::string TusManager::TUS_SUPPORTED_VERSIONS      = "1.0.0";
 const std::string TusManager::TUS_SUPPORTED_EXTENSIONS    = "creation,creation-with-upload,terminate,checksum";
+const std::string TusManager::TUS_SUPPORTED_CHECKSUM      = "sha1";
+const std::string TusManager::TUS_SUPPORTED_CHECKSUMS     = "sha1";
 const std::string TusManager::TUS_SUPPORTED_MAXSZ         = "1073741824";
 const std::string TusManager::PATCH_EXPECTED_CONTENT_TYPE = "application/offset+octet-stream";
 
@@ -133,6 +136,7 @@ void TusManager::processOptions(const http::request<http::dynamic_body>& req,
     resp.set(TAG_TUS_VERSION, TUS_SUPPORTED_VERSIONS);
     resp.set(TAG_TUS_MAXSZ, TUS_SUPPORTED_MAXSZ);
     resp.set(TAG_TUS_EXTENSION, TUS_SUPPORTED_EXTENSIONS);
+    resp.set(TAG_TUS_CHECKSUM_ALG, TUS_SUPPORTED_CHECKSUMS);
     resp.result(http::status::no_content);
 }
 
