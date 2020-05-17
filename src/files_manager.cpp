@@ -21,22 +21,13 @@ TmpFilesResource::TmpFilesResource(FilesManager& files_man, const std::string& u
 
 TmpFilesResource::~TmpFilesResource() noexcept
 {
-    if (persisted_)
-        return;
+    if (persisted_) return;
 
-    auto rmfun = [](std::ofstream & ostr, const std::string & fpath)
-    {
-        if (ostr.is_open())
-        {
-            ostr.close();
-            auto res = ::remove(fpath.c_str());
-            if (res)
-                std::cerr << "remove " << fpath << " failed: " << res << std::endl;
-        }
-    };
-    rmfun(md_ostr_, md_fpath_);
-    rmfun(dt_ostr_, dt_fpath_);
-    files_man_.rmUniqueFileName(uuid_);
+    auto delete_md = md_ostr_.is_open();
+    bool delete_dt = dt_ostr_.is_open();
+    md_ostr_.close();
+    dt_ostr_.close();
+    files_man_.Delete(uuid_, delete_md, delete_dt);
 }
 
 std::ofstream& TmpFilesResource::MetadataFstream(size_t length, const std::string_view& sv)
@@ -128,6 +119,22 @@ size_t FilesManager::Write(const std::string& uuid, std::streamoff offset_sz, co
         md_ostr.write(reinterpret_cast<const char*>(&sz), sizeof(sz));
     }
     return ret;
+}
+
+bool FilesManager::Delete(const std::string& uuid, bool delete_md, bool delete_dt) noexcept
+{
+    auto rm_and_log = [](const std::string & fpath)
+    {
+        auto res = ::remove(fpath.c_str());
+        if (res)
+            std::cerr << "remove " << fpath << " failed: " << res << std::endl;
+    };
+
+    if (delete_dt)
+        rm_and_log(MakeFPath(uuid));
+    if (delete_md)
+        rm_and_log(MakeFPath(uuid + METADATA_FNAME_SUFFIX));
+    return rmUniqueFileName(uuid);
 }
 
 std::string FilesManager::newUniqueFileName()

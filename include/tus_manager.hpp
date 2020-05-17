@@ -42,6 +42,8 @@ private:
                      boost::beast::http::response<boost::beast::http::dynamic_body>& resp);
     void processPatch(const boost::beast::http::request<boost::beast::http::dynamic_body>& req,
                       boost::beast::http::response<boost::beast::http::dynamic_body>& resp);
+    void processDelete(const boost::beast::http::request<boost::beast::http::dynamic_body>& req,
+                       boost::beast::http::response<boost::beast::http::dynamic_body>& resp);
 };
 
 } // namespace tus

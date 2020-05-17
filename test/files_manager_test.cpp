@@ -176,3 +176,63 @@ TEST_CASE( "Write offset", "[FilesManager]" )
     }
 }
 
+TEST_CASE( "Delete", "[FilesManager]" )
+{
+    tus::FilesManager fm(".");
+
+    SECTION("returns false when not exists")
+    {
+        auto res = fm.Delete("nott-exis-tent-file");
+        REQUIRE(res == false);
+    }
+
+    SECTION("when metadata is empty")
+    {
+        std::string f_uuid;
+        {
+            auto res = fm.NewTmpFilesResource();
+            f_uuid = res.Uuid();
+            auto& od = res.DataFstream(1007);
+            CHECK(!!od);
+
+            fm.Persist(res);
+        }
+        REQUIRE(fm.Size() == 1);
+        REQUIRE(fm.Delete(f_uuid) == true);
+        REQUIRE(fm.Size() == 0);
+    }
+
+    SECTION("when data file is empty")
+    {
+        std::string f_uuid;
+        {
+            auto res = fm.NewTmpFilesResource();
+            f_uuid = res.Uuid();
+            auto& om = res.MetadataFstream();
+            CHECK(!!om);
+
+            fm.Persist(res);
+        }
+        REQUIRE(fm.Size() == 1);
+        REQUIRE(fm.Delete(f_uuid) == true);
+        REQUIRE(fm.Size() == 0);
+    }
+
+    SECTION("when all full")
+    {
+        std::string f_uuid;
+        {
+            auto res = fm.NewTmpFilesResource();
+            f_uuid = res.Uuid();
+            auto& od = res.DataFstream(1007);
+            CHECK(!!od);
+            auto& om = res.MetadataFstream();
+            CHECK(!!om);
+
+            fm.Persist(res);
+        }
+        REQUIRE(fm.Size() == 1);
+        REQUIRE(fm.Delete(f_uuid) == true);
+        REQUIRE(fm.Size() == 0);
+    }
+}

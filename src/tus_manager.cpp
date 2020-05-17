@@ -47,7 +47,7 @@ const std::string TusManager::TAG_UPLOAD_METADATA = "Upload-Metadata";
 const std::string TusManager::TAG_UPLOAD_OFFSET   = "Upload-Offset";
 
 const std::string TusManager::TUS_SUPPORTED_VERSIONS      = "1.0.0";
-const std::string TusManager::TUS_SUPPORTED_EXTENSIONS    = "creation,creation-with-upload";
+const std::string TusManager::TUS_SUPPORTED_EXTENSIONS    = "creation,creation-with-upload,terminate";
 const std::string TusManager::TUS_SUPPORTED_MAXSZ         = "1073741824";
 const std::string TusManager::PATCH_EXPECTED_CONTENT_TYPE = "application/offset+octet-stream";
 
@@ -74,6 +74,10 @@ http::response<http::dynamic_body> TusManager::MakeResponse(const http::request<
 
     case http::verb::patch:
         processPatch(req, resp);
+        break;
+
+    case http::verb::delete_:
+        processDelete(req, resp);
         break;
 
     default:
@@ -244,6 +248,30 @@ void TusManager::processPatch(const http::request<http::dynamic_body>& req,
     resp.result(http::status::no_content);
 }
 
+void TusManager::processDelete(const http::request<http::dynamic_body>& req,
+                               http::response<http::dynamic_body>& resp)
+{
+    if (!Common_Checks(req, resp)) return;
+
+    if (const auto [clen_found, clen_val] = Parse_Number_From_Req<size_t>(req, http::field::content_length);
+            clen_found || clen_val > 0)
+    {
+        // Has a content Content-Length
+        resp.result(http::status::bad_request);
+        std::cerr << "delete Shall have zero Content-Length" << std::endl;
+        return;
+    }
+
+    const std::string fileUUID(req.target().begin() + strlen("/files/"), req.target().end());
+    if (auto res = files_man_.Delete(fileUUID); !res)
+    {
+        resp.result(http::status::not_found);
+        return;
+    }
+    resp.set(TAG_TUS_RESUMABLE, "1.0.0");
+    resp.result(http::status::no_content);
+}
+
 namespace
 {
 bool Common_Checks(const http::request<http::dynamic_body>& req,
@@ -254,6 +282,12 @@ bool Common_Checks(const http::request<http::dynamic_body>& req,
         // HTTP target is wrong
         resp.result(http::status::not_found);
         return false;
+    }
+    const auto [ho_found, hoststr] = Parse_From_Req(req, http::field::host);
+    if (ho_found)
+    {
+        // TODO: How/What should we check this value against?
+        // return;
     }
     const auto [tr_found, tr_val] = Parse_From_Req(req, TusManager::TAG_TUS_RESUMABLE);
     if (!tr_found)
