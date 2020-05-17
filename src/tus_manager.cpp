@@ -6,6 +6,7 @@
 #include <boost/beast/http/status.hpp>
 
 #include <iostream>
+#include <algorithm>
 #include <charconv>
 #include <string_view>
 
@@ -33,6 +34,15 @@ auto Parse_From_Req(const http::request<http::dynamic_body>& req, const T& tag)
     ret.second = it->value().to_string();
     return ret;
 }
+
+bool ShaHex_Equal(const std::string_view& fm_hex, const std::string_view& http_hex)
+{
+    return std::lexicographical_compare(fm_hex.begin(), fm_hex.end(),
+                                        http_hex.begin(), http_hex.end(),
+                [](const auto fmi, const auto hhi) { return std::toupper(hhi) == fmi; }
+            ) == 0;
+}
+
 }
 
 namespace tus
@@ -45,11 +55,14 @@ const std::string TusManager::TAG_TUS_EXTENSION   = "Tus-Extension";
 const std::string TusManager::TAG_UPLOAD_LENGTH   = "Upload-Length";
 const std::string TusManager::TAG_UPLOAD_METADATA = "Upload-Metadata";
 const std::string TusManager::TAG_UPLOAD_OFFSET   = "Upload-Offset";
+const std::string TusManager::TAG_UPLOAD_CHECKSUM = "Upload-Checksum";
 
 const std::string TusManager::TUS_SUPPORTED_VERSIONS      = "1.0.0";
-const std::string TusManager::TUS_SUPPORTED_EXTENSIONS    = "creation,creation-with-upload,terminate";
+const std::string TusManager::TUS_SUPPORTED_EXTENSIONS    = "creation,creation-with-upload,terminate,checksum";
 const std::string TusManager::TUS_SUPPORTED_MAXSZ         = "1073741824";
 const std::string TusManager::PATCH_EXPECTED_CONTENT_TYPE = "application/offset+octet-stream";
+
+const unsigned Http_Status_Checksum_Mismatch = 460;
 
 http::response<http::dynamic_body> TusManager::MakeResponse(const http::request<http::dynamic_body>& req)
 {
@@ -220,6 +233,13 @@ void TusManager::processPatch(const http::request<http::dynamic_body>& req,
     const auto [ok, offset_val] = Patch_Checks(req, resp);
     if (!ok) return;
 
+    const auto [uc_found, uc_val] = Parse_From_Req(req, TAG_UPLOAD_CHECKSUM);
+    if (uc_found && uc_val.empty()) // Empty checksum
+    {
+        resp.result(http::status::bad_request);
+        return;
+    }
+
     if (!files_man_.HasFile(fileUUID))
     {
         resp.result(http::status::not_found);
@@ -244,6 +264,18 @@ void TusManager::processPatch(const http::request<http::dynamic_body>& req,
     }
 
     resp.set(TAG_TUS_RESUMABLE, "1.0.0");
+    if (uc_found &&
+        !ShaHex_Equal(files_man_.ChecksumSha1(fileUUID, offset_val, res), uc_val))
+    {
+        resp.result(Http_Status_Checksum_Mismatch);
+        return;
+    }
+    if (!files_man_.UpdateOffsetMetadata(fileUUID, offset_val + res))
+    {
+        resp.result(http::status::internal_server_error);
+        return;
+    }
+
     resp.set(TAG_UPLOAD_OFFSET, offset_val + res);
     resp.result(http::status::no_content);
 }

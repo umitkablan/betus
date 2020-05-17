@@ -1,6 +1,8 @@
 #include "include/files_manager.hpp"
 
+#include <boost/algorithm/hex.hpp>
 #include <boost/uuid/uuid_io.hpp>
+#include <boost/uuid/sha1.hpp>
 
 #include <fstream>
 #include <ios>
@@ -96,11 +98,49 @@ Metadata FilesManager::GetMetadata(const std::string& uuid) const
     return ret;
 }
 
+std::string FilesManager::ChecksumSha1(const std::string &uuid,
+                                       std::ifstream::pos_type begpos, std::streamoff count) const
+{
+    using boost::uuids::detail::sha1;
+    using boost::algorithm::hex;
+
+    std::string ret;
+    std::ifstream dt_istr(MakeFPath(uuid));
+
+    if (!dt_istr.is_open())
+        return ret;
+    const auto filesz = [&dt_istr]() {
+        dt_istr.seekg(0, std::ios_base::end);
+        return dt_istr.tellg();
+    }();
+    if (begpos >= filesz)
+        return ret;
+    if (count == 0) count = filesz - begpos;
+    if (count > (filesz - begpos))
+        return ret;
+    dt_istr.seekg(begpos, std::ios_base::beg);
+
+    sha1 gen;
+    char datblock[2048];
+    for (; count > 0 && !dt_istr.eof() && dt_istr.good();
+            count -= dt_istr.gcount())
+    {
+        dt_istr.readsome(datblock, std::min(count, static_cast<std::ifstream::off_type>(2048)));
+        gen.process_block(datblock, datblock + dt_istr.gcount());
+    }
+
+    ret.reserve(42);
+    sha1::digest_type dig;
+    gen.get_digest(dig);
+    hex(std::begin(dig), std::end(dig), std::back_inserter(ret));
+
+    return ret;
+}
+
 size_t FilesManager::Write(const std::string& uuid, std::streamoff offset_sz, const boost::beast::multi_buffer& body)
 {
     std::fstream dt_ostr(MakeFPath(uuid));
-    std::fstream md_ostr(MakeFPath(uuid + METADATA_FNAME_SUFFIX));
-    if (!dt_ostr.is_open() || !md_ostr.is_open())
+    if (!dt_ostr.is_open())
         return 0;
     dt_ostr.seekp(offset_sz, std::ios_base::beg);
     assert(offset_sz == dt_ostr.tellp());
@@ -113,12 +153,16 @@ size_t FilesManager::Write(const std::string& uuid, std::streamoff offset_sz, co
         ret += constbuf.size();
         if (!dt_ostr.write(datp, constbuf.size()))
             return 0;
-
-        std::streamoff sz = dt_ostr.tellp();
-        md_ostr.seekp(0, std::ios_base::beg);
-        md_ostr.write(reinterpret_cast<const char*>(&sz), sizeof(sz));
     }
     return ret;
+}
+
+bool FilesManager::UpdateOffsetMetadata(const std::string& uuid, std::streamoff newoff)
+{
+    std::fstream md_ostr(MakeFPath(uuid + METADATA_FNAME_SUFFIX));
+    if (!md_ostr.is_open())
+        return false;
+    return !!md_ostr.write(reinterpret_cast<const char*>(&newoff), sizeof(newoff));
 }
 
 bool FilesManager::Delete(const std::string& uuid, bool delete_md, bool delete_dt) noexcept

@@ -23,6 +23,7 @@ public:
     static const std::string TAG_UPLOAD_LENGTH;
     static const std::string TAG_UPLOAD_METADATA;
     static const std::string TAG_UPLOAD_OFFSET;
+    static const std::string TAG_UPLOAD_CHECKSUM;
 
     static const std::string TUS_SUPPORTED_VERSIONS;
     static const std::string TUS_SUPPORTED_EXTENSIONS;

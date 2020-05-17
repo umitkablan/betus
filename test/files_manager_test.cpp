@@ -164,6 +164,7 @@ TEST_CASE( "Write offset", "[FilesManager]" )
             mb.commit(100);
 
             CHECK(fm.Write(f_uuid, 0, mb) == 100);
+            CHECK(fm.UpdateOffsetMetadata(f_uuid, 100));
         }
         md = fm.GetMetadata(f_uuid);
         REQUIRE(md.offset == 100);
@@ -234,5 +235,72 @@ TEST_CASE( "Delete", "[FilesManager]" )
         REQUIRE(fm.Size() == 1);
         REQUIRE(fm.Delete(f_uuid) == true);
         REQUIRE(fm.Size() == 0);
+    }
+}
+
+TEST_CASE("Digest", "[FilesManager]")
+{
+    tus::FilesManager fm(".");
+
+    SECTION("returns empty when not exists")
+    {
+        auto res = fm.ChecksumSha1("nott-exis-tent-file");
+        REQUIRE(res.empty());
+    }
+
+    SECTION("returns empty when file could not be opened")
+    {
+        // TODO
+        // auto res = fm.ChecksumSha1("erro-file-nott-easy");
+        // CHECK(res.empty());
+    }
+
+    SECTION("returns sha1 of hello world - default parameters")
+    {
+        const char* fname = "hello-world-to-be-sha1_DELETE";
+        {
+            std::ofstream of(fname);
+            of << "hello world!" << std::endl;
+        }
+        auto res = fm.ChecksumSha1(fname);
+        // Capital letters
+        ::remove(fname);
+        REQUIRE(res.compare("F951B101989B2C3B7471710B4E78FC4DBDFA0CA6") == 0); // echo "hello world!" | sha1sum
+    }
+
+    SECTION("returns empty when begin position is invalid")
+    {
+        const char* fname = "hello-world-to-be-sha1_DELETE";
+        {
+            std::ofstream of(fname);
+            of << "hello world!" << std::endl;
+        }
+        auto res = fm.ChecksumSha1(fname, 13);
+        ::remove(fname);
+        REQUIRE(res.empty());
+    }
+
+    SECTION("returns empty when begin-end range is invalid")
+    {
+        const char* fname = "hello-world-to-be-sha1_DELETE";
+        {
+            std::ofstream of(fname);
+            of << "hello world!" << std::endl;
+        }
+        auto res = fm.ChecksumSha1(fname, 10, 4);
+        ::remove(fname);
+        REQUIRE(res.empty());
+    }
+
+    SECTION("returns success when begin-end range is valid")
+    {
+        const char* fname = "hello-world-to-be-sha1_DELETE";
+        {
+            std::ofstream of(fname);
+            of << "hello world!" << std::endl;
+        }
+        auto res = fm.ChecksumSha1(fname, 10, 3);
+        ::remove(fname);
+        REQUIRE(res.compare("4C9E2DC5D81E106BB2E5A43B720C1486417C2974") == 0); // echo "d!" | sha1sum
     }
 }
