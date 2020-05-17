@@ -57,6 +57,7 @@ const std::string TusManager::TAG_UPLOAD_METADATA = "Upload-Metadata";
 const std::string TusManager::TAG_UPLOAD_OFFSET   = "Upload-Offset";
 const std::string TusManager::TAG_UPLOAD_CHECKSUM = "Upload-Checksum";
 
+const std::string TusManager::TUS_SUPPORTED_VERSION       = "1.0.0";
 const std::string TusManager::TUS_SUPPORTED_VERSIONS      = "1.0.0";
 const std::string TusManager::TUS_SUPPORTED_EXTENSIONS    = "creation,creation-with-upload,terminate,checksum";
 const std::string TusManager::TUS_SUPPORTED_MAXSZ         = "1073741824";
@@ -114,6 +115,8 @@ Patch_Checks(const http::request<http::dynamic_body>& req,
 void TusManager::processOptions(const http::request<http::dynamic_body>& req,
                                 http::response<http::dynamic_body>& resp)
 {
+    resp.set(TAG_TUS_RESUMABLE, TusManager::TUS_SUPPORTED_VERSION);
+
     if (!req.target().starts_with("/files"))
     {
         // HTTP target is wrong
@@ -127,7 +130,6 @@ void TusManager::processOptions(const http::request<http::dynamic_body>& req,
         // return;
     }
 
-    resp.set(TAG_TUS_RESUMABLE, "1.0.0");
     resp.set(TAG_TUS_VERSION, TUS_SUPPORTED_VERSIONS);
     resp.set(TAG_TUS_MAXSZ, TUS_SUPPORTED_MAXSZ);
     resp.set(TAG_TUS_EXTENSION, TUS_SUPPORTED_EXTENSIONS);
@@ -152,7 +154,6 @@ void TusManager::processHead(const http::request<http::dynamic_body>& req,
         return;
     }
 
-    resp.set(TAG_TUS_RESUMABLE, "1.0.0");
     resp.set(TAG_UPLOAD_OFFSET, std::to_string(md.offset));
     if (md.length > 0)
         resp.set(TAG_UPLOAD_LENGTH, std::to_string(md.length));
@@ -219,7 +220,6 @@ void TusManager::processPost(const http::request<http::dynamic_body>& req,
     }
     files_man_.Persist(newres);
 
-    resp.set(TAG_TUS_RESUMABLE, "1.0.0");
     resp.set(http::field::location, "http://127.0.0.1:8080/files/" + newres.Uuid());
     resp.result(http::status::created);
 }
@@ -263,7 +263,6 @@ void TusManager::processPatch(const http::request<http::dynamic_body>& req,
         return;
     }
 
-    resp.set(TAG_TUS_RESUMABLE, "1.0.0");
     if (uc_found &&
         !ShaHex_Equal(files_man_.ChecksumSha1(fileUUID, offset_val, res), uc_val))
     {
@@ -300,7 +299,6 @@ void TusManager::processDelete(const http::request<http::dynamic_body>& req,
         resp.result(http::status::not_found);
         return;
     }
-    resp.set(TAG_TUS_RESUMABLE, "1.0.0");
     resp.result(http::status::no_content);
 }
 
@@ -309,9 +307,10 @@ namespace
 bool Common_Checks(const http::request<http::dynamic_body>& req,
                    http::response<http::dynamic_body>& resp)
 {
-    if (!req.target().starts_with("/files"))
+    resp.set(TusManager::TAG_TUS_RESUMABLE, TusManager::TUS_SUPPORTED_VERSION);
+
+    if (!req.target().starts_with("/files")) // HTTP target is wrong
     {
-        // HTTP target is wrong
         resp.result(http::status::not_found);
         return false;
     }
@@ -322,12 +321,15 @@ bool Common_Checks(const http::request<http::dynamic_body>& req,
         // return;
     }
     const auto [tr_found, tr_val] = Parse_From_Req(req, TusManager::TAG_TUS_RESUMABLE);
-    if (!tr_found)
+    if (!tr_found ||
+        std::lexicographical_compare(tr_val.begin(), tr_val.end(),
+                                 std::begin(TusManager::TUS_SUPPORTED_VERSIONS),
+                                 std::end(TusManager::TUS_SUPPORTED_VERSION))) // Unsupported version received
     {
-        // TusManager-Resumable tag not found
-        resp.result(http::status::bad_request);
+        resp.result(http::status::precondition_failed);
         return false;
     }
+
     return true;
 }
 
