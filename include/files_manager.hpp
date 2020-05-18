@@ -69,8 +69,8 @@ public:
     size_t Size() const { return all_fnames_.size(); }
     bool HasFile(const std::string& uuid) const;
     Metadata GetMetadata(const std::string& uuid) const;
-    std::string ChecksumSha1(const std::string& uuid,
-                             std::ifstream::pos_type begpos = 0, std::streamoff count = 0) const;
+    std::string ChecksumSha1Hex(const std::string& uuid,
+                                std::ifstream::pos_type begpos = 0, std::streamoff count = 0) const;
     size_t Write(const std::string& uuid,  std::streamoff offset_sz, const boost::beast::multi_buffer& body);
     bool UpdateOffsetMetadata(const std::string& uuid, std::streamoff newoff);
     bool Delete(const std::string& uuid, bool delete_md = true, bool delete_dt = true) noexcept;

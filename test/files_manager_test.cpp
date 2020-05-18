@@ -244,14 +244,14 @@ TEST_CASE("Digest", "[FilesManager]")
 
     SECTION("returns empty when not exists")
     {
-        auto res = fm.ChecksumSha1("nott-exis-tent-file");
+        auto res = fm.ChecksumSha1Hex("nott-exis-tent-file");
         REQUIRE(res.empty());
     }
 
     SECTION("returns empty when file could not be opened")
     {
         // TODO
-        // auto res = fm.ChecksumSha1("erro-file-nott-easy");
+        // auto res = fm.ChecksumSha1Hex("erro-file-nott-easy");
         // CHECK(res.empty());
     }
 
@@ -262,8 +262,7 @@ TEST_CASE("Digest", "[FilesManager]")
             std::ofstream of(fname);
             of << "hello world!" << std::endl;
         }
-        auto res = fm.ChecksumSha1(fname);
-        // Capital letters
+        auto res = fm.ChecksumSha1Hex(fname);
         ::remove(fname);
         REQUIRE(res.compare("F951B101989B2C3B7471710B4E78FC4DBDFA0CA6") == 0); // echo "hello world!" | sha1sum
     }
@@ -275,7 +274,7 @@ TEST_CASE("Digest", "[FilesManager]")
             std::ofstream of(fname);
             of << "hello world!" << std::endl;
         }
-        auto res = fm.ChecksumSha1(fname, 13);
+        auto res = fm.ChecksumSha1Hex(fname, 13);
         ::remove(fname);
         REQUIRE(res.empty());
     }
@@ -287,7 +286,7 @@ TEST_CASE("Digest", "[FilesManager]")
             std::ofstream of(fname);
             of << "hello world!" << std::endl;
         }
-        auto res = fm.ChecksumSha1(fname, 10, 4);
+        auto res = fm.ChecksumSha1Hex(fname, 10, 4);
         ::remove(fname);
         REQUIRE(res.empty());
     }
@@ -299,7 +298,7 @@ TEST_CASE("Digest", "[FilesManager]")
             std::ofstream of(fname);
             of << "hello world!" << std::endl;
         }
-        auto res = fm.ChecksumSha1(fname, 10, 3);
+        auto res = fm.ChecksumSha1Hex(fname, 10, 3);
         ::remove(fname);
         REQUIRE(res.compare("4C9E2DC5D81E106BB2E5A43B720C1486417C2974") == 0); // echo "d!" | sha1sum
     }

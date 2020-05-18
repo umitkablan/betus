@@ -5,9 +5,13 @@
 #include <boost/beast/http/fields.hpp>
 #include <boost/beast/http/status.hpp>
 
+#include <boost/archive/iterators/binary_from_base64.hpp>
+#include <boost/archive/iterators/transform_width.hpp>
+
 #include <iostream>
 #include <algorithm>
 #include <charconv>
+#include <string>
 #include <string_view>
 
 namespace http = boost::beast::http;
@@ -35,14 +39,44 @@ auto Parse_From_Req(const http::request<http::dynamic_body>& req, const T& tag)
     return ret;
 }
 
-bool ShaHex_Equal(const std::string_view& fm_hex, const std::string_view& http_hex)
+std::string Base64_To_Bin(const std::string_view &shastr)
 {
-    return std::lexicographical_compare(fm_hex.begin(), fm_hex.end(),
-                                        http_hex.begin(), http_hex.end(),
-                [](const auto fmi, const auto hhi) { return std::toupper(hhi) == fmi; }
-            ) == 0;
+    namespace ar_iters = boost::archive::iterators;
+    using ItBinaryT = ar_iters::transform_width<
+                        ar_iters::binary_from_base64<std::string::const_iterator>,
+                        8, 6>;
+
+    std::string input(std::begin(shastr), std::end(shastr));
+    std::string output;
+    output.reserve(24);
+
+    size_t pad_chars(std::count(input.begin(), input.end(), '='));
+    std::replace(input.begin(), input.end(), '=', 'A');
+    try
+    {
+        std::copy(ItBinaryT(input.begin()), ItBinaryT(input.end()),
+                  std::back_inserter(output));
+    } catch (std::exception const &) {}
+    output.resize(output.size() - pad_chars);
+    return output;
 }
 
+bool CheckSum_Match(const std::string_view& hexstr, const std::string_view& b64_bin)
+{
+    const char* digits = "0123456789ABCDEF";
+    assert(!(hexstr.size() % 2));
+
+    if (2 * b64_bin.size() != hexstr.size())
+        return false;
+    for (size_t i = 0; i < hexstr.size(); i += 2)
+    {
+        unsigned char uc = b64_bin[i / 2];
+        if (hexstr[i]   != digits[(uc & 0xf0) >> 4] ||
+            hexstr[i+1] != digits[(uc & 0x0f)])
+            return false;
+    }
+    return true;
+}
 }
 
 namespace tus
@@ -238,7 +272,10 @@ void TusManager::processPatch(const http::request<http::dynamic_body>& req,
     if (!ok) return;
 
     const auto [uc_found, uc_val] = Parse_From_Req(req, TAG_UPLOAD_CHECKSUM);
-    if (uc_found && uc_val.empty()) // Empty checksum
+    auto uc_spaceit = std::find(uc_val.begin(), uc_val.end(), ' ');
+    if (uc_found &&
+        !std::equal(std::begin(TUS_SUPPORTED_CHECKSUM), std::end(TUS_SUPPORTED_CHECKSUM),
+                    uc_val.begin(), uc_spaceit)) // supported checksum?
     {
         resp.result(http::status::bad_request);
         return;
@@ -267,11 +304,17 @@ void TusManager::processPatch(const http::request<http::dynamic_body>& req,
         return;
     }
 
-    if (uc_found &&
-        !ShaHex_Equal(files_man_.ChecksumSha1(fileUUID, offset_val, res), uc_val))
+    if (uc_found)
     {
-        resp.result(Http_Status_Checksum_Mismatch);
-        return;
+        ++uc_spaceit;
+        const auto csbin = Base64_To_Bin(
+                               std::string_view(&(*uc_spaceit), uc_val.end() - uc_spaceit));
+        const auto cshexstr = files_man_.ChecksumSha1Hex(fileUUID, offset_val, res);
+        if (!CheckSum_Match(cshexstr, csbin))
+        {
+            resp.result(Http_Status_Checksum_Mismatch);
+            return;
+        }
     }
     if (!files_man_.UpdateOffsetMetadata(fileUUID, offset_val + res))
     {
@@ -326,9 +369,9 @@ bool Common_Checks(const http::request<http::dynamic_body>& req,
     }
     const auto [tr_found, tr_val] = Parse_From_Req(req, TusManager::TAG_TUS_RESUMABLE);
     if (!tr_found ||
-        std::lexicographical_compare(tr_val.begin(), tr_val.end(),
-                                 std::begin(TusManager::TUS_SUPPORTED_VERSIONS),
-                                 std::end(TusManager::TUS_SUPPORTED_VERSION))) // Unsupported version received
+            !std::equal(tr_val.begin(), tr_val.end(),
+                        std::begin(TusManager::TUS_SUPPORTED_VERSION),
+                        std::end(TusManager::TUS_SUPPORTED_VERSION))) // Unsupported version received
     {
         resp.result(http::status::precondition_failed);
         return false;

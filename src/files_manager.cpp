@@ -98,8 +98,8 @@ Metadata FilesManager::GetMetadata(const std::string& uuid) const
     return ret;
 }
 
-std::string FilesManager::ChecksumSha1(const std::string &uuid,
-                                       std::ifstream::pos_type begpos, std::streamoff count) const
+std::string FilesManager::ChecksumSha1Hex(const std::string &uuid,
+                                          std::ifstream::pos_type begpos, std::streamoff count) const
 {
     using boost::uuids::detail::sha1;
     using boost::algorithm::hex;
