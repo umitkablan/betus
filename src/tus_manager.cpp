@@ -102,7 +102,9 @@ const std::string TusManager::PATCH_EXPECTED_CONTENT_TYPE = "application/offset+
 
 const unsigned Http_Status_Checksum_Mismatch = 460;
 
-http::response<http::dynamic_body> TusManager::MakeResponse(const http::request<http::dynamic_body>& req)
+
+http::response<http::dynamic_body>
+TusManager::MakeResponse(const http::request<http::dynamic_body>& req)
 {
     http::response<http::dynamic_body> resp;
     resp.version(req.version());
@@ -154,9 +156,8 @@ void TusManager::processOptions(const http::request<http::dynamic_body>& req,
 {
     resp.set(TAG_TUS_RESUMABLE, TusManager::TUS_SUPPORTED_VERSION);
 
-    if (!req.target().starts_with("/files"))
+    if (!req.target().starts_with("/files")) // HTTP target is wrong
     {
-        // HTTP target is wrong
         resp.result(http::status::not_found);
         return;
     }
@@ -208,9 +209,8 @@ void TusManager::processPost(const http::request<http::dynamic_body>& req,
     if (!Common_Checks(req, resp)) return;
 
     const auto [ul_found, uploadlen] = Parse_Number_From_Req<size_t>(req, TAG_UPLOAD_LENGTH);
-    if (!ul_found || uploadlen == 0)
+    if (!ul_found || uploadlen == 0) // we don't support "Deferred Length" yet
     {
-        // we don't support "Deferred Length" yet
         resp.result(http::status::bad_request);
         return;
     }
@@ -240,9 +240,8 @@ void TusManager::processPost(const http::request<http::dynamic_body>& req,
             cl_found && contentlen > 0) // creation-with-upload support
     {
         if (const auto [ct_found, ct_val] = Parse_From_Req(req, http::field::content_type);
-                !ct_found || ct_val != TusManager::PATCH_EXPECTED_CONTENT_TYPE)
+                !ct_found || ct_val != TusManager::PATCH_EXPECTED_CONTENT_TYPE) // Content-Type not found or wrong
         {
-            // Content-Type not found or wrong
             resp.result(http::status::unsupported_media_type);
             return;
         }
@@ -332,9 +331,8 @@ void TusManager::processDelete(const http::request<http::dynamic_body>& req,
     if (!Common_Checks(req, resp)) return;
 
     if (const auto [clen_found, clen_val] = Parse_Number_From_Req<size_t>(req, http::field::content_length);
-            clen_found || clen_val > 0)
+            clen_found || clen_val > 0) // Has a content Content-Length
     {
-        // Has a content Content-Length
         resp.result(http::status::bad_request);
         std::cerr << "delete Shall have zero Content-Length" << std::endl;
         return;
@@ -387,23 +385,20 @@ Patch_Checks(const http::request<http::dynamic_body>& req,
     std::pair<bool, size_t> ret{false, 0};
 
     const auto [ct_found, ct_val] = Parse_From_Req(req, http::field::content_type);
-    if (!ct_found || ct_val != TusManager::PATCH_EXPECTED_CONTENT_TYPE)
+    if (!ct_found || ct_val != TusManager::PATCH_EXPECTED_CONTENT_TYPE) // Content-Type not found or wrong
     {
-        // Content-Type not found or wrong
         resp.result(http::status::unsupported_media_type);
         return ret;
     }
     const auto [clen_found, clen_val] = Parse_Number_From_Req<size_t>(req, http::field::content_length);
-    if (!clen_found || clen_val == 0)
+    if (!clen_found || clen_val == 0) // Content-Length not found or wrong
     {
-        // Content-Length not found or wrong
         resp.result(http::status::bad_request);
         return ret;
     }
     const auto pp = Parse_Number_From_Req<size_t>(req, TusManager::TAG_UPLOAD_OFFSET);
-    if (!pp.first)
+    if (!pp.first) // Upload-Offset not found
     {
-        // Upload-Offset not found
         resp.result(http::status::bad_request);
         return ret;
     }
