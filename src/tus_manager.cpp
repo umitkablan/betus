@@ -200,7 +200,7 @@ void TusManager::processHead(const http::request<http::dynamic_body>& req,
         resp.set(TAG_UPLOAD_METADATA, md.comment);
 
     resp.set(http::field::cache_control, "no-store");
-    resp.result(http::status::created);
+    resp.result(http::status::no_content);
 }
 
 void TusManager::processPost(const http::request<http::dynamic_body>& req,

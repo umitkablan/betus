@@ -181,6 +181,14 @@ bool FilesManager::Delete(const std::string& uuid, bool delete_md, bool delete_d
     return rmUniqueFileName(uuid);
 }
 
+size_t FilesManager::RmAllFiles()
+{
+    auto ret = all_fnames_.size();
+    for (const auto& fuuid : all_fnames_)
+        Delete(fuuid);
+    return ret;
+}
+
 std::string FilesManager::newUniqueFileName()
 {
     std::lock_guard lock(fname_mtx_);

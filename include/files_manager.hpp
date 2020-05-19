@@ -74,6 +74,7 @@ public:
     size_t Write(const std::string& uuid,  std::streamoff offset_sz, const boost::beast::multi_buffer& body);
     bool UpdateOffsetMetadata(const std::string& uuid, std::streamoff newoff);
     bool Delete(const std::string& uuid, bool delete_md = true, bool delete_dt = true) noexcept;
+    size_t RmAllFiles();
 
 private:
     std::string MakeFPath(const std::string_view& sv) const

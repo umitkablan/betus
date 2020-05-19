@@ -38,6 +38,12 @@ public:
 
     boost::beast::http::response<boost::beast::http::dynamic_body> MakeResponse(const boost::beast::http::request<boost::beast::http::dynamic_body>& req);
 
+    size_t DeleteAllFiles()
+    {
+        return files_man_.RmAllFiles();
+    }
+
+
 private:
     void processOptions(const boost::beast::http::request<boost::beast::http::dynamic_body>& req,
                         boost::beast::http::response<boost::beast::http::dynamic_body>& resp);
