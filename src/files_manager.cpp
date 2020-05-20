@@ -125,7 +125,8 @@ std::string FilesManager::ChecksumSha1Hex(const std::string &uuid,
     for (; count > 0 && !dt_istr.eof() && dt_istr.good();
             count -= dt_istr.gcount())
     {
-        dt_istr.readsome(datblock, std::min(count, static_cast<std::ifstream::off_type>(2048)));
+        dt_istr.readsome(datblock,
+                         std::min(count, static_cast<std::ifstream::off_type>(2048)));
         gen.process_block(datblock, datblock + dt_istr.gcount());
     }
 
@@ -137,7 +138,8 @@ std::string FilesManager::ChecksumSha1Hex(const std::string &uuid,
     return ret;
 }
 
-size_t FilesManager::Write(const std::string& uuid, std::streamoff offset_sz, const boost::beast::multi_buffer& body)
+size_t FilesManager::Write(const std::string& uuid, std::streamoff offset_sz,
+                           const boost::beast::multi_buffer& body)
 {
     std::fstream dt_ostr(MakeFPath(uuid));
     if (!dt_ostr.is_open())
