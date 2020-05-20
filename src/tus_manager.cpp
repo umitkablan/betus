@@ -331,10 +331,10 @@ void TusManager::processDelete(const http::request<http::dynamic_body>& req,
     if (!Common_Checks(req, resp)) return;
 
     if (const auto [clen_found, clen_val] = Parse_Number_From_Req<size_t>(req, http::field::content_length);
-            clen_found || clen_val > 0) // Has a content Content-Length
+            clen_found && clen_val > 0) // Has a content Content-Length
     {
         resp.result(http::status::bad_request);
-        std::cerr << "delete Shall have zero Content-Length" << std::endl;
+        std::cerr << "delete Shall have zero Content-Length: " << clen_val << std::endl;
         return;
     }
 
