@@ -1,5 +1,9 @@
 #include "include/files_manager.hpp"
 #include <fstream>
+#include <future>
+#include <pstl/glue_algorithm_defs.h>
+#include <system_error>
+#include <thread>
 
 
 #define CATCH_CONFIG_MAIN
@@ -10,23 +14,19 @@ TEST_CASE( "In directory where write is not allowed", "[FilesManager]" )
 {
     tus::FilesManager fm("/");
 
-    SECTION( "Paths are empty when streams are not acquired" )
+    SECTION("not initialized")
     {
         auto res = fm.NewTmpFilesResource();
         REQUIRE(!res.Uuid().empty());
-        REQUIRE(res.MetadataPath().empty());
-        REQUIRE(res.DataPath().empty());
         REQUIRE(fm.Size() == 1);
     }
     REQUIRE(fm.Size() == 0);
 
-    SECTION( "Acquired streams are not usable" )
+    SECTION("initialized")
     {
         auto res = fm.NewTmpFilesResource();
-        auto& om = res.MetadataFstream();
-        REQUIRE(!om);
-        auto& od = res.DataFstream(1000);
-        REQUIRE(!od);
+        auto err = res.Initialize(1000);
+        REQUIRE(err == std::errc::bad_file_descriptor);
         REQUIRE(fm.Size() == 1);
     }
     REQUIRE(fm.Size() == 0);
@@ -41,59 +41,34 @@ TEST_CASE( "Basic with regular writable directory", "[FilesManager]" )
         {
             auto res = fm.NewTmpFilesResource();
             REQUIRE(!res.Uuid().empty());
-            REQUIRE(res.MetadataPath().empty());
-            REQUIRE(res.DataPath().empty());
             REQUIRE(fm.Size() == 1);
         }
         REQUIRE(fm.Size() == 0);
     }
 
-    std::string dt_fname, md_fname;
-    SECTION( "Streams are usable, not persisted - removed" )
+    SECTION("initialized not persisted - removed")
     {
         {
             auto res = fm.NewTmpFilesResource();
-            auto& om = res.MetadataFstream();
-            REQUIRE(om);
-            auto& od = res.DataFstream(1000);
-            REQUIRE(od);
-            dt_fname = res.MetadataPath();
-            md_fname = res.DataPath();
-            REQUIRE(!dt_fname.empty());
-            REQUIRE(!md_fname.empty());
+            auto err = res.Initialize(1000);
+            REQUIRE(err == static_cast<std::errc>(0));
             REQUIRE(fm.Size() == 1);
         }
-        std::fstream dt_fstr(dt_fname);
-        CHECK(!dt_fstr);
-        std::fstream md_fstr(md_fname);
-        CHECK(!md_fstr);
-
         REQUIRE(fm.Size() == 0);
     }
 
-    SECTION( "Streams are usable, persisted - files are there" )
+    SECTION("initialized persisted - files are there")
     {
         {
             auto res = fm.NewTmpFilesResource();
-            auto& om = res.MetadataFstream();
-            CHECK(om);
-            om << "testtesttest" << std::endl;
-            auto& od = res.DataFstream(1000);
-            CHECK(od);
-            dt_fname = res.MetadataPath();
-            md_fname = res.DataPath();
-
+            auto err = res.Initialize(1000);
+            CHECK(err == static_cast<std::errc>(0));
             fm.Persist(res);
         }
-        std::fstream dt_fstr(dt_fname);
-        CHECK(!!dt_fstr);
-        std::fstream md_fstr(md_fname);
-        CHECK(!!md_fstr);
-        ::remove(dt_fname.c_str());
-        ::remove(md_fname.c_str());
-
         REQUIRE(fm.Size() == 1);
     }
+
+    fm.RmAllFiles();
 }
 
 TEST_CASE( "Write offset", "[FilesManager]" )
@@ -102,37 +77,37 @@ TEST_CASE( "Write offset", "[FilesManager]" )
 
     tus::FilesManager fm(".");
 
-    SECTION( "-1 when file not exists" )
+    SECTION("-1 when file not exists")
     {
-        auto md = fm.GetMetadata("nott-exis-tent-file");
+        auto [res, fres] = fm.GetFileResource("nott-exis-tent-file");
+        CHECK(res == std::errc::no_such_file_or_directory);
+        CHECK(fres.IsOpen() == false);
+
+        auto md = fres.GetMetadata();
         REQUIRE(md.offset == -1);
         REQUIRE(md.length == 0);
         REQUIRE(md.comment.empty());
     }
 
-    SECTION( "empty metadata" )
+    SECTION("empty metadata")
     {
-        std::string dt_fname, md_fname, f_uuid;
+        std::string f_uuid;
         {
             auto res = fm.NewTmpFilesResource();
-            auto& om = res.MetadataFstream();
-            CHECK(om);
-            auto& od = res.DataFstream(1007);
-            CHECK(od);
-            dt_fname = res.MetadataPath();
-            md_fname = res.DataPath();
+            auto err = res.Initialize(1007);
+            CHECK(err == static_cast<std::errc>(0));
             f_uuid = res.Uuid();
-
             fm.Persist(res);
         }
-        auto md = fm.GetMetadata(f_uuid);
-        REQUIRE(md.offset == 0);
-        REQUIRE(md.length == 0);
-        REQUIRE(md.comment.empty());
+        auto [res, fres] = fm.GetFileResource(f_uuid);
+        CHECK(res == static_cast<std::errc>(0));
+        const auto md = fres.GetMetadata();
+        CHECK(md.offset == 0);
+        CHECK(md.length == 1007);
+        CHECK(md.comment.empty());
 
-        ::remove(dt_fname.c_str());
-        ::remove(md_fname.c_str());
-        REQUIRE(fm.Size() == 1);
+        CHECK(fm.Size() == 1);
+        fm.RmAllFiles();
     }
 
     SECTION( "Write and get offset" )
@@ -140,51 +115,61 @@ TEST_CASE( "Write offset", "[FilesManager]" )
         std::string dt_fname, md_fname, f_uuid;
         {
             auto res = fm.NewTmpFilesResource();
-            auto& om = res.MetadataFstream(100, "write and get offset");
-            CHECK(om);
-            auto& od = res.DataFstream(1007);
-            CHECK(od);
-            dt_fname = res.MetadataPath();
-            md_fname = res.DataPath();
+            auto err = res.Initialize(100, "write and get offset");
+            CHECK(err == static_cast<std::errc>(0));
             f_uuid = res.Uuid();
 
             fm.Persist(res);
         }
-        auto md = fm.GetMetadata(f_uuid);
-        REQUIRE(md.offset == 0);
-        REQUIRE(md.length == 100);
-        REQUIRE(md.comment.compare("write and get offset") == 0);
-
+        {
+            auto [res, fres] = fm.GetFileResource(f_uuid);
+            const auto md = fres.GetMetadata();
+            CHECK(md.offset == 0);
+            CHECK(md.length == 100);
+            CHECK(md.comment.compare("write and get offset") == 0);
+        }
         {
             beast::multi_buffer mb(100);
             auto mutable_bufs = mb.prepare(100);
-            auto sz =  (*mutable_bufs.begin()).size();
             char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
-            for (size_t i = 0; i < sz; ++i) dat[i] = 'g';
+            std::fill_n(dat, (*mutable_bufs.begin()).size(), 'g');
             mb.commit(100);
 
-            CHECK(fm.Write(f_uuid, 0, mb) == 100);
-            CHECK(fm.UpdateOffsetMetadata(f_uuid, 100));
+            auto [res, fres] = fm.GetFileResource(f_uuid);
+            CHECK(res == static_cast<std::errc>(0));
+            CHECK(fres.Write(0, mb) == 100);
+            fres.Commit();
         }
-        md = fm.GetMetadata(f_uuid);
-        REQUIRE(md.offset == 100);
-        REQUIRE(md.length == 100);
-        REQUIRE(md.comment.compare("write and get offset") == 0);
+        auto [res, fres] = fm.GetFileResource(f_uuid);
+        const auto md = fres.GetMetadata();
+        CHECK(md.offset == 100);
+        CHECK(md.length == 100);
+        CHECK(md.comment.compare("write and get offset") == 0);
 
-        ::remove(dt_fname.c_str());
-        ::remove(md_fname.c_str());
-        REQUIRE(fm.Size() == 1);
+        CHECK(fm.Size() == 1);
+        fm.RmAllFiles();
     }
+
+    fm.RmAllFiles();
 }
 
 TEST_CASE( "Delete", "[FilesManager]" )
 {
     tus::FilesManager fm(".");
 
-    SECTION("returns false when not exists")
+    SECTION("when not exists")
     {
-        auto res = fm.Delete("nott-exis-tent-file");
-        REQUIRE(res == false);
+        {
+            auto [res, fres] = fm.GetFileResource("nott-exis-tent-file");
+            CHECK(res == std::errc::no_such_file_or_directory);
+            CHECK(fres.IsOpen() == false);
+            fres.Delete();
+            fres.Commit();
+        }
+        {
+            auto [res, fres] = fm.GetFileResource("nott-exis-tent-file");
+            CHECK(res == std::errc::no_such_file_or_directory);
+        }
     }
 
     SECTION("when metadata is empty")
@@ -193,13 +178,19 @@ TEST_CASE( "Delete", "[FilesManager]" )
         {
             auto res = fm.NewTmpFilesResource();
             f_uuid = res.Uuid();
-            auto& od = res.DataFstream(1007);
-            CHECK(!!od);
+            auto err = res.Initialize(1007);
+            CHECK(err == static_cast<std::errc>(0));
 
             fm.Persist(res);
         }
         REQUIRE(fm.Size() == 1);
-        REQUIRE(fm.Delete(f_uuid) == true);
+        {
+            auto [res, fres] = fm.GetFileResource(f_uuid);
+            CHECK(res == static_cast<std::errc>(0));
+            CHECK(fres.IsOpen() == true);
+            fres.Delete();
+            fres.Commit();
+        }
         REQUIRE(fm.Size() == 0);
     }
 
@@ -209,13 +200,18 @@ TEST_CASE( "Delete", "[FilesManager]" )
         {
             auto res = fm.NewTmpFilesResource();
             f_uuid = res.Uuid();
-            auto& om = res.MetadataFstream();
-            CHECK(!!om);
+            auto err = res.Initialize(109);
+            CHECK(err == static_cast<std::errc>(0));
 
             fm.Persist(res);
         }
         REQUIRE(fm.Size() == 1);
-        REQUIRE(fm.Delete(f_uuid) == true);
+        {
+            auto [res, fres] = fm.GetFileResource(f_uuid);
+            REQUIRE(fres.IsOpen() == true);
+            fres.Delete();
+            fres.Commit();
+        }
         REQUIRE(fm.Size() == 0);
     }
 
@@ -225,27 +221,33 @@ TEST_CASE( "Delete", "[FilesManager]" )
         {
             auto res = fm.NewTmpFilesResource();
             f_uuid = res.Uuid();
-            auto& od = res.DataFstream(1007);
-            CHECK(!!od);
-            auto& om = res.MetadataFstream();
-            CHECK(!!om);
+            auto err = res.Initialize(1007);
+            CHECK(err == static_cast<std::errc>(0));
 
             fm.Persist(res);
         }
         REQUIRE(fm.Size() == 1);
-        REQUIRE(fm.Delete(f_uuid) == true);
+        {
+            auto [res, fres] = fm.GetFileResource(f_uuid);
+            REQUIRE(fres.IsOpen() == true);
+            fres.Delete();
+            fres.Commit();
+        }
         REQUIRE(fm.Size() == 0);
     }
 }
 
-TEST_CASE("Digest", "[FilesManager]")
+TEST_CASE("Digest Error Case", "[FilesManager]")
 {
     tus::FilesManager fm(".");
 
     SECTION("returns empty when not exists")
     {
-        auto res = fm.ChecksumSha1Hex("nott-exis-tent-file");
-        REQUIRE(res.empty());
+        auto [res, fres] = fm.GetFileResource("nott-exis-tent-file");
+        REQUIRE(res == std::errc::no_such_file_or_directory);
+        REQUIRE(fres.IsOpen() == false);
+        const auto hashstr = fres.ChecksumSha1Hex();
+        REQUIRE(hashstr.empty());
     }
 
     SECTION("returns empty when file could not be opened")
@@ -254,52 +256,53 @@ TEST_CASE("Digest", "[FilesManager]")
         // auto res = fm.ChecksumSha1Hex("erro-file-nott-easy");
         // CHECK(res.empty());
     }
+}
+
+TEST_CASE("Digest Hello World", "[FilesManager]")
+{
+    tus::FilesManager fm(".");
+
+    const auto f_uuid = [&fm]() {
+        auto res = fm.NewTmpFilesResource();
+        const auto uuid = res.Uuid();
+        auto err = res.Initialize(107);
+        CHECK(err == static_cast<std::errc>(0));
+
+        fm.Persist(res);
+        return uuid;
+    }();
+
+    auto [res, fres] = fm.GetFileResource(f_uuid);
+    CHECK(fres.IsOpen() == true);
+
+    const auto hello_world = std::string_view("hello world!\n", 13);
+    CHECK(fres.Write(hello_world) == true);
 
     SECTION("returns sha1 of hello world - default parameters")
     {
-        const char* fname = "hello-world-to-be-sha1_DELETE";
-        {
-            std::ofstream of(fname);
-            of << "hello world!" << std::endl;
-        }
-        auto res = fm.ChecksumSha1Hex(fname);
-        ::remove(fname);
-        REQUIRE(res.compare("F951B101989B2C3B7471710B4E78FC4DBDFA0CA6") == 0); // echo "hello world!" | sha1sum
+        auto res = fres.ChecksumSha1Hex();
+        CHECK(res.compare("F951B101989B2C3B7471710B4E78FC4DBDFA0CA6") == 0); // echo "hello world!" | sha1sum
     }
 
     SECTION("returns empty when begin position is invalid")
     {
-        const char* fname = "hello-world-to-be-sha1_DELETE";
-        {
-            std::ofstream of(fname);
-            of << "hello world!" << std::endl;
-        }
-        auto res = fm.ChecksumSha1Hex(fname, 13);
-        ::remove(fname);
-        REQUIRE(res.empty());
+        auto res = fres.ChecksumSha1Hex(13);
+        CHECK(res.empty());
     }
 
     SECTION("returns empty when begin-end range is invalid")
     {
-        const char* fname = "hello-world-to-be-sha1_DELETE";
-        {
-            std::ofstream of(fname);
-            of << "hello world!" << std::endl;
-        }
-        auto res = fm.ChecksumSha1Hex(fname, 10, 4);
-        ::remove(fname);
-        REQUIRE(res.empty());
+        auto res = fres.ChecksumSha1Hex(10, 4);
+        CHECK(res.empty());
     }
 
     SECTION("returns success when begin-end range is valid")
     {
-        const char* fname = "hello-world-to-be-sha1_DELETE";
-        {
-            std::ofstream of(fname);
-            of << "hello world!" << std::endl;
-        }
-        auto res = fm.ChecksumSha1Hex(fname, 10, 3);
-        ::remove(fname);
-        REQUIRE(res.compare("4C9E2DC5D81E106BB2E5A43B720C1486417C2974") == 0); // echo "d!" | sha1sum
+        auto res = fres.ChecksumSha1Hex(10, 3);
+        CHECK(res.compare("4C9E2DC5D81E106BB2E5A43B720C1486417C2974") == 0); // echo "d!" | sha1sum
     }
+
+    REQUIRE(fm.Size() == 1);
+    fm.RmAllFiles();
+    REQUIRE(fm.Size() == 0);
 }

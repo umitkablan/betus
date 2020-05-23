@@ -13,6 +13,7 @@
 #include <charconv>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 namespace http = boost::beast::http;
 
@@ -181,12 +182,23 @@ void TusManager::processHead(const http::request<http::dynamic_body>& req,
     if (!Common_Checks(req, resp)) return;
 
     const std::string fileUUID(req.target().begin() + strlen("/files/"), req.target().end());
-    if (!files_man_.HasFile(fileUUID))
+    auto [res, fres] = files_man_.GetFileResource(fileUUID);
+    if (res == std::errc::device_or_resource_busy)
     {
-        resp.result(http::status::gone);
+        resp.result(http::status::conflict);
         return;
     }
-    const auto md = files_man_.GetMetadata(fileUUID);
+    if (res == std::errc::no_such_file_or_directory)
+    {
+        resp.result(http::status::not_found);
+        return;
+    }
+    if (static_cast<bool>(res) || !fres.IsOpen())
+    {
+        resp.result(http::status::internal_server_error);
+        return;
+    }
+    const auto md = fres.GetMetadata();
     if (md.offset < 0)
     {
         resp.result(http::status::gone);
@@ -218,19 +230,9 @@ void TusManager::processPost(const http::request<http::dynamic_body>& req,
     auto newres = files_man_.NewTmpFilesResource();
     {
         const auto [md_found, mtdata] = Parse_From_Req(req, TAG_UPLOAD_METADATA);
-        auto& o = newres.MetadataFstream(uploadlen, mtdata);
-        if (!o.good())
+        if (static_cast<bool>(newres.Initialize(uploadlen, mtdata)))
         {
-            std::cerr << "write error: " << newres.MetadataPath() << " couldn't be written/opened" << std::endl;
-            resp.result(http::status::internal_server_error);
-            return;
-        }
-    }
-    {
-        auto& o = newres.DataFstream(uploadlen);
-        if (!o.good())
-        {
-            std::cerr << "write error: " << newres.DataPath() << " couldn't be written/opened" << std::endl;
+            std::cerr << "write error: metadata couldn't be written/opened" << std::endl;
             resp.result(http::status::internal_server_error);
             return;
         }
@@ -239,21 +241,24 @@ void TusManager::processPost(const http::request<http::dynamic_body>& req,
     if (const auto [cl_found, contentlen] = Parse_Number_From_Req<size_t>(req, http::field::content_length);
             cl_found && contentlen > 0) // creation-with-upload support
     {
-        if (const auto [ct_found, ct_val] = Parse_From_Req(req, http::field::content_type);
-                !ct_found || ct_val != TusManager::PATCH_EXPECTED_CONTENT_TYPE) // Content-Type not found or wrong
-        {
-            resp.result(http::status::unsupported_media_type);
-            return;
-        }
-        auto res = files_man_.Write(newres.Uuid(), 0, req.body());
-        if (res < 1)
-        {
-            std::cerr << "initial write error: " << newres.DataPath() << " couldn't be written/opened" << std::endl;
-            resp.result(http::status::internal_server_error);
-            return;
-        }
-
-        resp.set(TAG_UPLOAD_OFFSET, res);
+        resp.result(http::status::bad_request);
+        return;
+        // TODO: Enable creation with upload later again
+        // if (const auto [ct_found, ct_val] = Parse_From_Req(req, http::field::content_type);
+        //         !ct_found || ct_val != TusManager::PATCH_EXPECTED_CONTENT_TYPE) // Content-Type not found or wrong
+        // {
+        //     resp.result(http::status::unsupported_media_type);
+        //     return;
+        // }
+        // auto res = files_man_.Write(newres.Uuid(), 0, req.body());
+        // if (res < 1)
+        // {
+        //     std::cerr << "initial write error: " << newres.DataPath() << " couldn't be written/opened" << std::endl;
+        //     resp.result(http::status::internal_server_error);
+        //     return;
+        // }
+        //
+        // resp.set(TAG_UPLOAD_OFFSET, res);
     }
     files_man_.Persist(newres);
 
@@ -280,12 +285,24 @@ void TusManager::processPatch(const http::request<http::dynamic_body>& req,
         return;
     }
 
-    if (!files_man_.HasFile(fileUUID))
+    auto [res, fres] = files_man_.GetFileResource(fileUUID);
+    if (res == std::errc::no_such_file_or_directory)
     {
         resp.result(http::status::not_found);
         return;
     }
-    const auto md = files_man_.GetMetadata(fileUUID);
+    if (res == std::errc::device_or_resource_busy)
+    {
+        resp.result(http::status::conflict);
+        return;
+    }
+    if (static_cast<bool>(res) || !fres.IsOpen())
+    {
+        resp.result(http::status::internal_server_error);
+        return;
+    }
+
+    const auto md = fres.GetMetadata();
     if (md.offset < 0)
     {
         resp.result(http::status::not_found);
@@ -296,8 +313,8 @@ void TusManager::processPatch(const http::request<http::dynamic_body>& req,
         resp.result(http::status::conflict);
         return;
     }
-    auto res = files_man_.Write(fileUUID, offset_val, req.body());
-    if (res < 1)
+    auto cnt = fres.Write(offset_val, req.body());
+    if (cnt < 1)
     {
         resp.result(http::status::internal_server_error);
         return;
@@ -308,20 +325,16 @@ void TusManager::processPatch(const http::request<http::dynamic_body>& req,
         ++uc_spaceit;
         const auto csbin = Base64_To_Bin(
                                std::string_view(&(*uc_spaceit), uc_val.end() - uc_spaceit));
-        const auto cshexstr = files_man_.ChecksumSha1Hex(fileUUID, offset_val, res);
+        const auto cshexstr = fres.ChecksumSha1Hex(offset_val, cnt);
         if (!CheckSum_Match(cshexstr, csbin))
         {
             resp.result(Http_Status_Checksum_Mismatch);
             return;
         }
     }
-    if (!files_man_.UpdateOffsetMetadata(fileUUID, offset_val + res))
-    {
-        resp.result(http::status::internal_server_error);
-        return;
-    }
+    fres.Commit();
+    resp.set(TAG_UPLOAD_OFFSET, offset_val + cnt);
 
-    resp.set(TAG_UPLOAD_OFFSET, offset_val + res);
     resp.result(http::status::no_content);
 }
 
@@ -339,11 +352,25 @@ void TusManager::processDelete(const http::request<http::dynamic_body>& req,
     }
 
     const std::string fileUUID(req.target().begin() + strlen("/files/"), req.target().end());
-    if (auto res = files_man_.Delete(fileUUID); !res)
+    auto [res, fres] = files_man_.GetFileResource(fileUUID);
+    if (res == std::errc::no_such_file_or_directory)
     {
         resp.result(http::status::not_found);
         return;
     }
+    if (res == std::errc::device_or_resource_busy)
+    {
+        resp.result(http::status::conflict);
+        return;
+    }
+    if (static_cast<bool>(res) || !fres.IsOpen())
+    {
+        resp.result(http::status::internal_server_error);
+        return;
+    }
+
+    fres.Delete();
+    fres.Commit();
     resp.result(http::status::no_content);
 }
 
