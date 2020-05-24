@@ -1,7 +1,6 @@
 #include "include/files_manager.hpp"
+
 #include <fstream>
-#include <future>
-#include <pstl/glue_algorithm_defs.h>
 #include <system_error>
 #include <thread>
 
@@ -137,7 +136,7 @@ TEST_CASE( "Write offset", "[FilesManager]" )
 
     SECTION( "Write and get offset" )
     {
-        std::string dt_fname, md_fname, f_uuid;
+        std::string f_uuid;
         {
             auto res = fm.NewTmpFilesResource();
             auto err = res.Initialize(100, "write and get offset");
