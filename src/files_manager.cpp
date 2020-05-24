@@ -19,7 +19,7 @@ const std::string FilesManager::METADATA_FNAME_SUFFIX = ".mdata";
 static const std::string Empty_String;
 
 TmpFilesResource::TmpFilesResource(FilesManager& files_man, const std::string& uuid)
-    : files_man_(files_man), persisted_(false), uuid_(uuid)
+    : files_man_(files_man), uuid_(uuid), persisted_(false), do_erase_(true)
 {
     md_ostr_.open(files_man_.makeFPath(uuid_ + FilesManager::METADATA_FNAME_SUFFIX));
     dt_ostr_.open(files_man_.makeFPath(uuid_));
@@ -29,7 +29,8 @@ TmpFilesResource::~TmpFilesResource() noexcept
 {
     md_ostr_.close();
     dt_ostr_.close();
-    files_man_.erase(uuid_, !persisted_);
+    if (do_erase_)
+        files_man_.erase(uuid_, !persisted_);
 }
 
 std::errc TmpFilesResource::Initialize(size_t totlen, const std::string_view& md_comment)
@@ -186,6 +187,19 @@ void FilesManager::erase(const std::string& uuid, bool delete_files) noexcept
 FileResource::FileResource(FilesManager& fm, const std::string& uuid)
     : files_man_(fm), uuid_(uuid), delete_mark_(false), do_release_mark_(true)
 {
+    if (uuid_.empty()) return;
+    fstream_dt_.open(files_man_.makeFPath(uuid_));
+    fstream_md_.open(files_man_.makeFPath(uuid_ + FilesManager::METADATA_FNAME_SUFFIX));
+}
+
+FileResource::FileResource(TmpFilesResource&& tmpres)
+    : files_man_(tmpres.files_man_), uuid_(tmpres.uuid_), delete_mark_(false), do_release_mark_(true)
+{
+    tmpres.dt_ostr_.close();
+    tmpres.md_ostr_.close();
+    tmpres.persisted_ = true;
+    tmpres.do_erase_ = false;
+
     if (uuid_.empty()) return;
     fstream_dt_.open(files_man_.makeFPath(uuid_));
     fstream_md_.open(files_man_.makeFPath(uuid_ + FilesManager::METADATA_FNAME_SUFFIX));

@@ -57,6 +57,31 @@ TEST_CASE( "Basic with regular writable directory", "[FilesManager]" )
         REQUIRE(fm.Size() == 0);
     }
 
+    SECTION("initialized not persisted - moved to FileResource")
+    {
+        std::string uuid;
+        {
+            auto res = fm.NewTmpFilesResource();
+            auto err = res.Initialize(1009);
+            REQUIRE(err == static_cast<std::errc>(0));
+            uuid = res.Uuid();
+            REQUIRE(fm.Size() == 1);
+            tus::FileResource fres(std::move(res));
+            CHECK(fres.Write("hello world!\n"));
+            fres.Commit();
+        }
+        REQUIRE(fm.Size() == 1);
+        {
+            auto [res, fres] = fm.GetFileResource(uuid);
+            CHECK(fres.IsOpen());
+            auto sha1sum = fres.ChecksumSha1Hex();
+            CHECK(sha1sum.compare("F951B101989B2C3B7471710B4E78FC4DBDFA0CA6") == 0); // echo "hello world!" | sha1sum
+            fres.Delete();
+            fres.Commit();
+        }
+        REQUIRE(fm.Size() == 0);
+    }
+
     SECTION("initialized persisted - files are there")
     {
         {

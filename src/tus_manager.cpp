@@ -241,26 +241,29 @@ void TusManager::processPost(const http::request<http::dynamic_body>& req,
     if (const auto [cl_found, contentlen] = Parse_Number_From_Req<size_t>(req, http::field::content_length);
             cl_found && contentlen > 0) // creation-with-upload support
     {
-        resp.result(http::status::bad_request);
-        return;
-        // TODO: Enable creation with upload later again
-        // if (const auto [ct_found, ct_val] = Parse_From_Req(req, http::field::content_type);
-        //         !ct_found || ct_val != TusManager::PATCH_EXPECTED_CONTENT_TYPE) // Content-Type not found or wrong
-        // {
-        //     resp.result(http::status::unsupported_media_type);
-        //     return;
-        // }
-        // auto res = files_man_.Write(newres.Uuid(), 0, req.body());
-        // if (res < 1)
-        // {
-        //     std::cerr << "initial write error: " << newres.DataPath() << " couldn't be written/opened" << std::endl;
-        //     resp.result(http::status::internal_server_error);
-        //     return;
-        // }
-        //
-        // resp.set(TAG_UPLOAD_OFFSET, res);
+        if (const auto [ct_found, ct_val] = Parse_From_Req(req, http::field::content_type);
+                !ct_found || ct_val != TusManager::PATCH_EXPECTED_CONTENT_TYPE) // Content-Type not found or wrong
+        {
+            resp.result(http::status::unsupported_media_type);
+            return;
+        }
+
+        FileResource fres(std::move(newres));
+        auto res = fres.Write(0, req.body());
+        if (res < 1)
+        {
+            std::cerr << "initial write error: data couldn't be written" << std::endl;
+            fres.Delete();
+            fres.Commit();
+            resp.result(http::status::internal_server_error);
+            return;
+        }
+
+        fres.Commit();
+        resp.set(TAG_UPLOAD_OFFSET, res);
     }
-    files_man_.Persist(newres);
+    else
+        files_man_.Persist(newres);
 
     resp.set(http::field::location, "http://127.0.0.1:8080/files/" + newres.Uuid());
     resp.result(http::status::created);

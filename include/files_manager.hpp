@@ -14,14 +14,17 @@ namespace tus
 {
 
 class FilesManager;
+class FileResource;
 
 class TmpFilesResource
 {
     friend class FilesManager;
+    friend class FileResource;
 
     FilesManager& files_man_;
-    bool persisted_;
     const std::string uuid_;
+    bool persisted_;
+    bool do_erase_;
 
     std::ofstream md_ostr_;
     std::ofstream dt_ostr_;
@@ -62,6 +65,8 @@ class FileResource
     FileResource(FilesManager& fm, const std::string& uuid);
 
 public:
+    FileResource(TmpFilesResource&& tmpres);
+
     ~FileResource() noexcept;
     FileResource(const FileResource&) = delete;
     FileResource(FileResource&&);
