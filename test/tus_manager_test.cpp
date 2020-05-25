@@ -157,9 +157,7 @@ TEST_CASE("HEAD", "[TusManager]")
     TusManager tm(".");
 
     http::request<http::dynamic_body> poreq{http::verb::post, "/files", 11};
-    poreq.set(http::field::host, "localhost");
-    poreq.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-    poreq.set("Tus-Resumable", "1.0.0");
+    Fill_Req(poreq);
     poreq.set("Upload-Length", 12);
 
     const auto poresp = tm.MakeResponse(poreq);
@@ -177,9 +175,7 @@ TEST_CASE("HEAD", "[TusManager]")
     SECTION("Success")
     {
         http::request<http::dynamic_body> req{http::verb::head, location, 11 };
-        req.set(http::field::host, "localhost");
-        req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-        req.set("Tus-Resumable", "1.0.0");
+        Fill_Req(req);
 
         const auto resp = tm.MakeResponse(req);
         REQUIRE(resp.result_int() == 204);
@@ -196,9 +192,7 @@ TEST_CASE("PATCH", "[TusManager]")
     TusManager tm(".");
 
     http::request<http::dynamic_body> poreq{http::verb::post, "/files", 11};
-    poreq.set(http::field::host, "localhost");
-    poreq.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-    poreq.set("Tus-Resumable", "1.0.0");
+    Fill_Req(poreq);
     poreq.set("Upload-Length", 11); // hello world
 
     const auto poresp = tm.MakeResponse(poreq);
