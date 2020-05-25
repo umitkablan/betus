@@ -213,6 +213,30 @@ TEST_CASE("PATCH", "[TusManager]")
     REQUIRE(it != locsw.end());
     std::string location(it, locsw.end());
 
+    SECTION("To a non-existing resource")
+    {
+        http::request<http::dynamic_body> req{http::verb::patch, location + "-123a", 11};
+        Fill_Req(req, "application/offset+octet-stream");
+        req.set("Upload-Offset", "0");
+
+        const char* hwstr = "Hello Sunny World!";
+        req.content_length(strlen(hwstr));
+
+        beast::multi_buffer mb(100);
+        auto mutable_bufs = mb.prepare(strlen(hwstr));
+        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
+        memcpy(dat, hwstr, strlen(hwstr));
+        mb.commit(strlen(hwstr));
+
+        req.body() = mb;
+
+        const auto resp = tm.MakeResponse(req);
+
+        CHECK(resp.result_int() == 404);
+        Check_Tus_Header_NoContent(resp);
+        REQUIRE(tm.DeleteAllFiles() == 1);
+    }
+
     SECTION("Sent content is larger than declared")
     {
         http::request<http::dynamic_body> req{http::verb::patch, location, 11};
