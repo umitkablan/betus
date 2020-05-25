@@ -136,21 +136,20 @@ std::errc FilesManager::release(FileResource& fres) noexcept
     return static_cast<std::errc>(0);
 }
 
-std::string FilesManager::newUniqueFileName()
+const std::string& FilesManager::newUniqueFileName()
 {
     std::lock_guard lock(fname_mtx_);
 
-    std::string ret;
+    std::string uuidstr;
     auto it = all_fnames_.cbegin();
     do {
         boost::uuids::uuid uuid = random_uuid_generator_();
-        ret = to_string(uuid);
-        it = all_fnames_.find(ret);
+        uuidstr = to_string(uuid);
+        it = all_fnames_.find(uuidstr);
     } while (it != all_fnames_.cend());
 
-    all_fnames_.emplace(ret);
-    inuse_fnames_.emplace(ret);
-    return ret;
+    inuse_fnames_.emplace(uuidstr);
+    return *all_fnames_.emplace(uuidstr).first;
 }
 
 std::string FilesManager::makeFPath(const std::string_view& sv) const

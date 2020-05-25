@@ -114,7 +114,7 @@ public:
 private:
     std::errc release(FileResource& fres) noexcept;
 
-    std::string newUniqueFileName();
+    const std::string& newUniqueFileName();
     std::string makeFPath(const std::string_view& sv) const;
 
     void deleteFiles(const std::string& uuid) noexcept;
