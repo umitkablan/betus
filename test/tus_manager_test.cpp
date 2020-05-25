@@ -25,6 +25,15 @@ void Check_Tus_Header_NoContent(const http::response<http::dynamic_body>& resp)
     if (resp.count(http::field::content_length) == 1)
         CHECK(resp.at(http::field::content_length) == "0");
 }
+
+void Fill_Req(http::request<http::dynamic_body>& req, const std::string_view& content_type = "")
+{
+    req.set(http::field::host, "localhost");
+    req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
+    if (!content_type.empty())
+        req.set(http::field::content_type, content_type);
+    req.set("Tus-Resumable", "1.0.0");
+}
 }
 
 TEST_CASE("Basic", "[TusManager]")
@@ -207,10 +216,7 @@ TEST_CASE("PATCH", "[TusManager]")
     SECTION("Sent content is larger than declared")
     {
         http::request<http::dynamic_body> req{http::verb::patch, location, 11};
-        req.set(http::field::host, "localhost");
-        req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-        req.set(http::field::content_type, "application/offset+octet-stream");
-        req.set("Tus-Resumable", "1.0.0");
+        Fill_Req(req, "application/offset+octet-stream");
         req.set("Upload-Offset", "0");
 
         const char* hwstr = "Hello Sunny World!";
@@ -234,10 +240,7 @@ TEST_CASE("PATCH", "[TusManager]")
     SECTION("Wrong offset")
     {
         http::request<http::dynamic_body> req{http::verb::patch, location, 11};
-        req.set(http::field::host, "localhost");
-        req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-        req.set(http::field::content_type, "application/offset+octet-stream");
-        req.set("Tus-Resumable", "1.0.0");
+        Fill_Req(req, "application/offset+octet-stream");
         req.set("Upload-Offset", "1");
 
         const char* hwstr = "Hello Word"; // We are sending offset 1, 1 less char here
@@ -261,10 +264,7 @@ TEST_CASE("PATCH", "[TusManager]")
     SECTION("Correct - two loads")
     {
         http::request<http::dynamic_body> req{http::verb::patch, location, 11};
-        req.set(http::field::host, "localhost");
-        req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-        req.set(http::field::content_type, "application/offset+octet-stream");
-        req.set("Tus-Resumable", "1.0.0");
+        Fill_Req(req, "application/offset+octet-stream");
 
         {
             req.set("Upload-Offset", "0");
@@ -316,9 +316,7 @@ TEST_CASE("Checksum", "[TusManager]")
     TusManager tm(".");
 
     http::request<http::dynamic_body> poreq{http::verb::post, "/files", 11};
-    poreq.set(http::field::host, "localhost");
-    poreq.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-    poreq.set("Tus-Resumable", "1.0.0");
+    Fill_Req(poreq);
     poreq.set("Upload-Length", 11); // hello world
 
     const auto poresp = tm.MakeResponse(poreq);
@@ -336,10 +334,7 @@ TEST_CASE("Checksum", "[TusManager]")
     SECTION("Wrong Hash")
     {
         http::request<http::dynamic_body> req{http::verb::patch, location, 11};
-        req.set(http::field::host, "localhost");
-        req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-        req.set(http::field::content_type, "application/offset+octet-stream");
-        req.set("Tus-Resumable", "1.0.0");
+        Fill_Req(req, "application/offset+octet-stream");
         req.set("Upload-Offset", "0");
         req.set("Upload-Checksum", "sha1 Kq5sNclPz7QV2+lfQIuc6R7oRu0=");
 
@@ -364,10 +359,7 @@ TEST_CASE("Checksum", "[TusManager]")
     SECTION("Correct Hash - one load")
     {
         http::request<http::dynamic_body> req{http::verb::patch, location, 11};
-        req.set(http::field::host, "localhost");
-        req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-        req.set(http::field::content_type, "application/offset+octet-stream");
-        req.set("Tus-Resumable", "1.0.0");
+        Fill_Req(req, "application/offset+octet-stream");
         req.set("Upload-Offset", "0");
         req.set("Upload-Checksum", "sha1 Kq5sNclPz7QV2+lfQIuc6R7oRu0=");
 
@@ -392,10 +384,7 @@ TEST_CASE("Checksum", "[TusManager]")
     SECTION("Correct Hash - two loads")
     {
         http::request<http::dynamic_body> req{http::verb::patch, location, 11};
-        req.set(http::field::host, "localhost");
-        req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-        req.set(http::field::content_type, "application/offset+octet-stream");
-        req.set("Tus-Resumable", "1.0.0");
+        Fill_Req(req, "application/offset+octet-stream");
 
         {
             req.set("Upload-Offset", "0");
@@ -453,9 +442,7 @@ TEST_CASE("Terminate Extension", "[TusManager]")
     SECTION("File Not Found")
     {
         http::request<http::dynamic_body> req{http::verb::delete_, "/files/aaaa-bbbb-cccc-dddd", 11};
-        req.set(http::field::host, "localhost");
-        req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-        req.set("Tus-Resumable", "1.0.0");
+        Fill_Req(req);
 
         const auto resp = tm.MakeResponse(req);
         REQUIRE(resp.result_int() == 404);
@@ -464,12 +451,9 @@ TEST_CASE("Terminate Extension", "[TusManager]")
     SECTION("Success terminate with Initial Content")
     {
         http::request<http::dynamic_body> req{http::verb::post, "/files", 11};
-        req.set(http::field::host, "localhost");
-        req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-        req.set("Tus-Resumable", "1.0.0");
+        Fill_Req(req, "application/offset+octet-stream");
         req.set("Upload-Length", 11); // hello world
         req.set("Upload-Offset", "0");
-        req.set(http::field::content_type, "application/offset+octet-stream");
 
         const char* hwstr = "hello world";
         beast::multi_buffer mb(100);
@@ -495,9 +479,7 @@ TEST_CASE("Terminate Extension", "[TusManager]")
 
         { // Send delete to rm file: Found and Terminated
             http::request<http::dynamic_body> req{http::verb::delete_, location, 11};
-            req.set(http::field::host, "localhost");
-            req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-            req.set("Tus-Resumable", "1.0.0");
+            Fill_Req(req);
             req.content_length(0);
 
             const auto resp = tm.MakeResponse(req);
@@ -507,9 +489,7 @@ TEST_CASE("Terminate Extension", "[TusManager]")
         }
         { // Send another delete to rm file: Not Found
             http::request<http::dynamic_body> req{http::verb::delete_, location, 11};
-            req.set(http::field::host, "localhost");
-            req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-            req.set("Tus-Resumable", "1.0.0");
+            Fill_Req(req);
             req.content_length(0);
 
             const auto resp = tm.MakeResponse(req);
