@@ -45,13 +45,14 @@ std::errc TmpFilesResource::Initialize(size_t totlen, const std::string_view& md
     }
     if (md_ostr_)
     {
-        std::streamoff sz = 0;
-        md_ostr_.write(reinterpret_cast<const char*>(&sz), sizeof(sz));
+        decltype(Metadata::offset) offset = 0;
+        md_ostr_.write(reinterpret_cast<const char*>(&offset), sizeof(offset));
         md_ostr_.write(reinterpret_cast<const char*>(&totlen), sizeof(totlen));
         md_ostr_ << std::endl;
     }
     if (!md_comment.empty() && md_ostr_.good())
-        md_ostr_ << md_comment << std::endl;
+        md_ostr_ << md_comment << '\n';
+    md_ostr_ << '\n';
 
     if (!md_ostr_ || !dt_ostr_)
         return std::errc::bad_file_descriptor;
@@ -159,16 +160,17 @@ std::string FilesManager::makeFPath(const std::string_view& sv) const
     return ret;
 }
 
-void FilesManager::deleteFiles(const std::string& uuid) noexcept
+bool FilesManager::deleteFiles(const std::string& uuid) noexcept
 {
-    auto rm_and_log = [](const std::string & fpath)
-    {
+    auto rm_or_log = [](const std::string & fpath) {
         auto res = ::remove(fpath.c_str());
         if (res)
             std::cerr << "remove " << fpath << " failed: " << res << std::endl;
+        return res;
     };
-    rm_and_log(makeFPath(uuid));
-    rm_and_log(makeFPath(uuid + FilesManager::METADATA_FNAME_SUFFIX));
+    auto ret = rm_or_log(makeFPath(uuid));
+    ret |= rm_or_log(makeFPath(uuid + FilesManager::METADATA_FNAME_SUFFIX));
+    return !ret;
 }
 
 void FilesManager::erase(const std::string& uuid, bool delete_files) noexcept
@@ -299,24 +301,22 @@ size_t FileResource::Write(std::streamoff offset_sz, const boost::beast::multi_b
     return ret;
 }
 
-void FileResource::Commit()
+bool FileResource::Commit()
 {
     if (delete_mark_)
     {
         fstream_dt_.close();
         fstream_md_.close();
-        files_man_.deleteFiles(uuid_);
+        return files_man_.deleteFiles(uuid_);
     }
-    else
-        updateOffsetMetadata();
+    return updateOffsetMetadata();
 }
 
 bool FileResource::updateOffsetMetadata()
 {
     if (!fstream_md_.is_open() || !fstream_dt_.is_open())
         return false;
-    fstream_dt_.seekg(0, std::ios_base::end);
-    std::streamoff newoff = fstream_dt_.tellg();
+    decltype(Metadata::offset) newoff = fstream_dt_.tellp();
 
     fstream_md_.seekp(0, std::ios_base::beg);
     return !!fstream_md_.write(reinterpret_cast<const char*>(&newoff), sizeof(newoff));

@@ -83,7 +83,7 @@ public:
     }
 
     void Delete() noexcept { delete_mark_ = true; }
-    void Commit();
+    bool Commit();
 };
 
 class FilesManager
@@ -117,7 +117,7 @@ private:
     const std::string& newUniqueFileName();
     std::string makeFPath(const std::string_view& sv) const;
 
-    void deleteFiles(const std::string& uuid) noexcept;
+    bool deleteFiles(const std::string& uuid) noexcept;
     void erase(const std::string& uuid, bool delete_files) noexcept;
 };
 

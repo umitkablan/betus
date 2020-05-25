@@ -313,6 +313,7 @@ void TusManager::processPatch(const http::request<http::dynamic_body>& req,
     }
     if (static_cast<size_t>(md.offset) != offset_val)
     {
+        std::cerr << fileUUID << ": Offset mismatch " << md.offset << " != " << offset_val << std::endl;
         resp.result(http::status::conflict);
         return;
     }
