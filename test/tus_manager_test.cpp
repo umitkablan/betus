@@ -182,6 +182,135 @@ TEST_CASE("HEAD", "[TusManager]")
     tm.DeleteAllFiles();
 }
 
+TEST_CASE("PATCH", "[TusManager]")
+{
+    TusManager tm(".");
+
+    http::request<http::dynamic_body> poreq{http::verb::post, "/files", 11};
+    poreq.set(http::field::host, "localhost");
+    poreq.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
+    poreq.set("Tus-Resumable", "1.0.0");
+    poreq.set("Upload-Length", 11); // hello world
+
+    const auto poresp = tm.MakeResponse(poreq);
+    CHECK(poresp.result_int() == 201);
+    Check_Tus_Header_NoContent(poresp);
+
+    REQUIRE(poresp.count("location") == 1);
+    const auto locsw = poresp.at("location");
+    auto pos = locsw.find("://");
+    REQUIRE(pos != std::string::npos);
+    auto it = std::find(locsw.begin() + pos + 3, locsw.end(), '/');
+    REQUIRE(it != locsw.end());
+    std::string location(it, locsw.end());
+
+    SECTION("Sent content is larger than declared")
+    {
+        http::request<http::dynamic_body> req{http::verb::patch, location, 11};
+        req.set(http::field::host, "localhost");
+        req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
+        req.set(http::field::content_type, "application/offset+octet-stream");
+        req.set("Tus-Resumable", "1.0.0");
+        req.set("Upload-Offset", "0");
+
+        const char* hwstr = "Hello Sunny World!";
+        req.content_length(strlen(hwstr));
+
+        beast::multi_buffer mb(100);
+        auto mutable_bufs = mb.prepare(strlen(hwstr));
+        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
+        memcpy(dat, hwstr, strlen(hwstr));
+        mb.commit(strlen(hwstr));
+
+        req.body() = mb;
+
+        const auto resp = tm.MakeResponse(req);
+
+        CHECK(resp.result_int() == 409);
+        Check_Tus_Header_NoContent(resp);
+        REQUIRE(tm.DeleteAllFiles() == 1);
+    }
+
+    SECTION("Wrong offset")
+    {
+        http::request<http::dynamic_body> req{http::verb::patch, location, 11};
+        req.set(http::field::host, "localhost");
+        req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
+        req.set(http::field::content_type, "application/offset+octet-stream");
+        req.set("Tus-Resumable", "1.0.0");
+        req.set("Upload-Offset", "1");
+
+        const char* hwstr = "Hello Word"; // We are sending offset 1, 1 less char here
+        req.content_length(strlen(hwstr));
+
+        beast::multi_buffer mb(100);
+        auto mutable_bufs = mb.prepare(strlen(hwstr));
+        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
+        memcpy(dat, hwstr, strlen(hwstr));
+        mb.commit(strlen(hwstr));
+
+        req.body() = mb;
+
+        const auto resp = tm.MakeResponse(req);
+
+        CHECK(resp.result_int() == 409);
+        Check_Tus_Header_NoContent(resp);
+        REQUIRE(tm.DeleteAllFiles() == 1);
+    }
+
+    SECTION("Correct - two loads")
+    {
+        http::request<http::dynamic_body> req{http::verb::patch, location, 11};
+        req.set(http::field::host, "localhost");
+        req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
+        req.set(http::field::content_type, "application/offset+octet-stream");
+        req.set("Tus-Resumable", "1.0.0");
+
+        {
+            req.set("Upload-Offset", "0");
+
+            const char *hwstr = "Hello ";
+            req.content_length(strlen(hwstr));
+
+            beast::multi_buffer mb(100);
+            auto mutable_bufs = mb.prepare(strlen(hwstr));
+            char *dat = static_cast<char *>((*mutable_bufs.begin()).data());
+            memcpy(dat, hwstr, strlen(hwstr));
+            mb.commit(strlen(hwstr));
+
+            req.body() = mb;
+
+            const auto resp = tm.MakeResponse(req);
+
+            CHECK(resp.result_int() == 204);
+            Check_Tus_Header_NoContent(resp);
+            REQUIRE(resp.count("Upload-Offset") == 1);
+            CHECK(resp.at("Upload-Offset") == "6");
+        }
+        {
+            req.set("Upload-Offset", "6");
+
+            const char *hwstr = "World";
+            req.content_length(strlen(hwstr));
+
+            beast::multi_buffer mb(100);
+            auto mutable_bufs = mb.prepare(strlen(hwstr));
+            char *dat = static_cast<char *>((*mutable_bufs.begin()).data());
+            memcpy(dat, hwstr, strlen(hwstr));
+            mb.commit(strlen(hwstr));
+
+            req.body() = mb;
+
+            const auto resp = tm.MakeResponse(req);
+
+            CHECK(resp.result_int() == 204);
+            Check_Tus_Header_NoContent(resp);
+        }
+
+        REQUIRE(tm.DeleteAllFiles() == 1);
+    }
+}
+
 TEST_CASE("Checksum", "[TusManager]")
 {
     TusManager tm(".");
@@ -214,7 +343,7 @@ TEST_CASE("Checksum", "[TusManager]")
         req.set("Upload-Offset", "0");
         req.set("Upload-Checksum", "sha1 Kq5sNclPz7QV2+lfQIuc6R7oRu0=");
 
-        const char* hwstr = "Hello Sunny World!";
+        const char* hwstr = "Hello word!";
         req.content_length(strlen(hwstr));
 
         beast::multi_buffer mb(100);

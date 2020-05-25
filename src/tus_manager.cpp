@@ -317,6 +317,22 @@ void TusManager::processPatch(const http::request<http::dynamic_body>& req,
         resp.result(http::status::conflict);
         return;
     }
+    if (const auto [found, cl] = Parse_Number_From_Req<size_t>(req, http::field::content_length);
+            !found || offset_val + cl > md.length)
+    {
+        std::cerr << fileUUID;
+        if (!found)
+        {
+            resp.result(http::status::bad_request);
+            std::cerr << ": Content-Length not found" << std::endl;
+        }
+        else
+        {
+            resp.result(http::status::conflict);
+            std::cerr << ": Declared size is not sufficient to hold data " << md.length << " != " << (offset_val + cl) << std::endl;
+        }
+        return;
+    }
     auto cnt = fres.Write(offset_val, req.body());
     if (cnt < 1)
     {
@@ -419,12 +435,6 @@ Patch_Checks(const http::request<http::dynamic_body>& req,
     if (!ct_found || ct_val != TusManager::PATCH_EXPECTED_CONTENT_TYPE) // Content-Type not found or wrong
     {
         resp.result(http::status::unsupported_media_type);
-        return ret;
-    }
-    const auto [clen_found, clen_val] = Parse_Number_From_Req<size_t>(req, http::field::content_length);
-    if (!clen_found || clen_val == 0) // Content-Length not found or wrong
-    {
-        resp.result(http::status::bad_request);
         return ret;
     }
     const auto pp = Parse_Number_From_Req<size_t>(req, TusManager::TAG_UPLOAD_OFFSET);
