@@ -23,6 +23,10 @@ add_executable(betusd src/server.cpp src/tus_manager.cpp src/files_manager.cpp)
 target_compile_options(betusd PRIVATE -Wall -Wextra -Werror)
 target_compile_options(betusd PUBLIC -std=c++17)
 target_include_directories(betusd PUBLIC ${CMAKE_CURRENT_LIST_DIR})
+if(CMAKE_BUILD_TYPE MATCHES Debug)
+    target_compile_options(betusd PRIVATE -fno-omit-frame-pointer -fsanitize=address)
+    target_link_libraries(betusd -lasan)
+endif()
 target_link_libraries(betusd Threads::Threads Boost::Boost)
 
 enable_testing()
@@ -31,7 +35,11 @@ add_executable(betest test/files_manager_test.cpp test/tus_manager_test.cpp src/
 target_compile_options(betest PRIVATE -Wall -Wextra -Werror)
 target_compile_options(betest PUBLIC -std=c++17)
 target_include_directories(betest PUBLIC ${CMAKE_CURRENT_LIST_DIR})
-target_link_libraries(betest PRIVATE Catch2::Catch2 Boost::Boost)
+if(CMAKE_BUILD_TYPE MATCHES Debug)
+    target_compile_options(betest PRIVATE -fno-omit-frame-pointer -fsanitize=address)
+    target_link_libraries(betest -lasan)
+endif()
+target_link_libraries(betest Catch2::Catch2 Boost::Boost)
 
 if(CMAKE_COMPILER_IS_GNUCXX AND CMAKE_BUILD_TYPE MATCHES Debug)
     setup_target_for_coverage_gcovr_html(
