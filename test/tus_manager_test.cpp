@@ -95,6 +95,22 @@ TEST_CASE("OPTIONS", "[TusManager]")
 
 TEST_CASE("POST", "[TusManager]")
 {
+    SECTION("Resource directory is not writable")
+    {
+        TusManager tm("/");
+        http::request<http::dynamic_body> req{http::verb::post, "/files", 11};
+        Fill_Req(req);
+        req.set("Upload-Length", 12);
+
+        const auto resp = tm.MakeResponse(req);
+        CHECK(resp.result_int() == 500);
+
+        Check_Tus_Header_NoContent(resp);
+        REQUIRE(resp.count("location") == 0);
+
+        REQUIRE(tm.DeleteAllFiles() == 0);
+    }
+
     TusManager tm(".");
 
     SECTION("Wrong root")
@@ -134,6 +150,30 @@ TEST_CASE("POST", "[TusManager]")
             CHECK(resp.result_int() == 400);
             Check_Tus_Header_NoContent(resp);
         }
+    }
+
+    SECTION("no content_type for initial load within")
+    {
+        req.set("Upload-Length", 12);
+
+        const char* hwstr = "Hello";
+        req.content_length(strlen(hwstr));
+
+        beast::multi_buffer mb(100);
+        auto mutable_bufs = mb.prepare(strlen(hwstr));
+        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
+        memcpy(dat, hwstr, strlen(hwstr));
+        mb.commit(strlen(hwstr));
+
+        req.body() = mb;
+
+        const auto resp = tm.MakeResponse(req);
+        CHECK(resp.result_int() == 415);
+
+        Check_Tus_Header_NoContent(resp);
+        REQUIRE(resp.count("location") == 0);
+
+        REQUIRE(tm.DeleteAllFiles() == 0);
     }
 
     SECTION("Success")
@@ -182,6 +222,44 @@ TEST_CASE("HEAD", "[TusManager]")
         Check_Tus_Header_NoContent(resp);
         REQUIRE(resp.count("Upload-Offset") == 1);
         CHECK(resp.at("Upload-Offset") == "0");
+    }
+    SECTION("No such resource")
+    {
+        http::request<http::dynamic_body> req{http::verb::head, location + "_NOT_FOUND", 11 };
+        Fill_Req(req);
+
+        const auto resp = tm.MakeResponse(req);
+        REQUIRE(resp.result_int() == 404);
+        Check_Tus_Header_NoContent(resp);
+        REQUIRE(resp.count("Upload-Offset") == 0);
+    }
+    SECTION("internal error - artificial")
+    {
+        { // remove file as if it was suddenly gone or corrupted
+            auto res = ::remove(location.data() + strlen("/files/"));
+            CHECK(res == 0);
+        }
+        http::request<http::dynamic_body> req{http::verb::head, location, 11 };
+        Fill_Req(req);
+
+        const auto resp = tm.MakeResponse(req);
+        REQUIRE(resp.result_int() == 500);
+        Check_Tus_Header_NoContent(resp);
+        REQUIRE(resp.count("Upload-Offset") == 0);
+    }
+    SECTION("metadata error - artificial")
+    {
+        { // clear metadata file artificially
+            auto of = std::ofstream(location.substr(strlen("/files/")) + ".mdata");
+            CHECK(of.is_open());
+        }
+        http::request<http::dynamic_body> req{http::verb::head, location, 11 };
+        Fill_Req(req);
+
+        const auto resp = tm.MakeResponse(req);
+        REQUIRE(resp.result_int() == 410);
+        Check_Tus_Header_NoContent(resp);
+        REQUIRE(resp.count("Upload-Offset") == 0);
     }
 
     tm.DeleteAllFiles();
@@ -279,6 +357,82 @@ TEST_CASE("PATCH", "[TusManager]")
         REQUIRE(tm.DeleteAllFiles() == 1);
     }
 
+    SECTION("Wrong content type")
+    {
+        http::request<http::dynamic_body> req{http::verb::patch, location, 11};
+        Fill_Req(req, "application/offset+json");
+        req.set("Upload-Offset", "0");
+
+        const char* hwstr = "Hello World";
+        req.content_length(strlen(hwstr));
+
+        beast::multi_buffer mb(100);
+        auto mutable_bufs = mb.prepare(strlen(hwstr));
+        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
+        memcpy(dat, hwstr, strlen(hwstr));
+        mb.commit(strlen(hwstr));
+
+        req.body() = mb;
+
+        const auto resp = tm.MakeResponse(req);
+
+        CHECK(resp.result_int() == 415);
+        Check_Tus_Header_NoContent(resp);
+        REQUIRE(tm.DeleteAllFiles() == 1);
+    }
+
+    SECTION("No Upload-Offset")
+    {
+        http::request<http::dynamic_body> req{http::verb::patch, location, 11};
+        Fill_Req(req, "application/offset+octet-stream");
+
+        const char* hwstr = "Hello World";
+        req.content_length(strlen(hwstr));
+
+        beast::multi_buffer mb(100);
+        auto mutable_bufs = mb.prepare(strlen(hwstr));
+        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
+        memcpy(dat, hwstr, strlen(hwstr));
+        mb.commit(strlen(hwstr));
+
+        req.body() = mb;
+
+        const auto resp = tm.MakeResponse(req);
+
+        CHECK(resp.result_int() == 400);
+        Check_Tus_Header_NoContent(resp);
+        REQUIRE(tm.DeleteAllFiles() == 1);
+    }
+
+    SECTION("artificial file corruption - deleted")
+    {
+        { // remove file as if it was suddenly gone or corrupted
+            auto res = ::remove(location.data() + strlen("/files/"));
+            CHECK(res == 0);
+        }
+
+        http::request<http::dynamic_body> req{http::verb::patch, location, 11};
+        Fill_Req(req, "application/offset+octet-stream");
+        req.set("Upload-Offset", "0");
+
+        const char* hwstr = "Hello World";
+        req.content_length(strlen(hwstr));
+
+        beast::multi_buffer mb(100);
+        auto mutable_bufs = mb.prepare(strlen(hwstr));
+        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
+        memcpy(dat, hwstr, strlen(hwstr));
+        mb.commit(strlen(hwstr));
+
+        req.body() = mb;
+
+        const auto resp = tm.MakeResponse(req);
+
+        CHECK(resp.result_int() == 500);
+        Check_Tus_Header_NoContent(resp);
+        REQUIRE(tm.DeleteAllFiles() == 1);
+    }
+
     SECTION("Correct - two loads")
     {
         http::request<http::dynamic_body> req{http::verb::patch, location, 11};
@@ -348,6 +502,56 @@ TEST_CASE("Checksum", "[TusManager]")
     auto it = std::find(locsw.begin() + pos + 3, locsw.end(), '/');
     REQUIRE(it != locsw.end());
     std::string location(it, locsw.end());
+
+    SECTION("Wrong Checksum Algorithm")
+    {
+        http::request<http::dynamic_body> req{http::verb::patch, location, 11};
+        Fill_Req(req, "application/offset+octet-stream");
+        req.set("Upload-Offset", "0");
+        req.set("Upload-Checksum", "md5 XrY7u+Ae7tCTyyK7j1rNww=="); //echo -n "hello world" | md5sum | xxd -r -p | base64
+
+        const char* hwstr = "hello world";
+        req.content_length(strlen(hwstr));
+
+        beast::multi_buffer mb(100);
+        auto mutable_bufs = mb.prepare(strlen(hwstr));
+        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
+        memcpy(dat, hwstr, strlen(hwstr));
+        mb.commit(strlen(hwstr));
+
+        req.body() = mb;
+
+        const auto resp = tm.MakeResponse(req);
+
+        CHECK(resp.result_int() == 400);
+        Check_Tus_Header_NoContent(resp);
+        REQUIRE(tm.DeleteAllFiles() == 1);
+    }
+
+    SECTION("md5 faked as sha1 checksum")
+    {
+        http::request<http::dynamic_body> req{http::verb::patch, location, 11};
+        Fill_Req(req, "application/offset+octet-stream");
+        req.set("Upload-Offset", "0");
+        req.set("Upload-Checksum", "sha1 XrY7u+Ae7tCTyyK7j1rNww=="); //echo -n "hello world" | md5sum | xxd -r -p | base64
+
+        const char* hwstr = "hello world";
+        req.content_length(strlen(hwstr));
+
+        beast::multi_buffer mb(100);
+        auto mutable_bufs = mb.prepare(strlen(hwstr));
+        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
+        memcpy(dat, hwstr, strlen(hwstr));
+        mb.commit(strlen(hwstr));
+
+        req.body() = mb;
+
+        const auto resp = tm.MakeResponse(req);
+
+        CHECK(resp.result_int() == 460);
+        Check_Tus_Header_NoContent(resp);
+        REQUIRE(tm.DeleteAllFiles() == 1);
+    }
 
     SECTION("Wrong Hash")
     {
@@ -459,11 +663,31 @@ TEST_CASE("Terminate Extension", "[TusManager]")
 
     SECTION("File Not Found")
     {
-        http::request<http::dynamic_body> req{http::verb::delete_, "/files/aaaa-bbbb-cccc-dddd", 11};
+        http::request<http::dynamic_body> req{http::verb::delete_, "/files/aaaa-bbbb-cccc", 11};
         Fill_Req(req);
 
         const auto resp = tm.MakeResponse(req);
         REQUIRE(resp.result_int() == 404);
+    }
+
+    SECTION("Terminate with content should fail")
+    {
+        http::request<http::dynamic_body> req{http::verb::delete_, "/files/aaaa-bbbb-cccc", 11};
+        Fill_Req(req);
+
+        const char *hwstr = "world";
+        req.content_length(strlen(hwstr));
+
+        beast::multi_buffer mb(100);
+        auto mutable_bufs = mb.prepare(strlen(hwstr));
+        char *dat = static_cast<char *>((*mutable_bufs.begin()).data());
+        memcpy(dat, hwstr, strlen(hwstr));
+        mb.commit(strlen(hwstr));
+
+        req.body() = mb;
+
+        const auto resp = tm.MakeResponse(req);
+        REQUIRE(resp.result_int() == 400);
     }
 
     SECTION("Success terminate with Initial Content")
