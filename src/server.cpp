@@ -60,7 +60,7 @@ private:
     void write_response_async(const std::shared_ptr<HttpConnection>& self)
     {
         http::async_write( socket_, response_,
-                           [this, self](beast::error_code ec, std::size_t sz)
+                           [this, self](beast::error_code ec, std::size_t)
         {
             if (!ec)
             {
