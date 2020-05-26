@@ -174,6 +174,32 @@ TEST_CASE( "Write offset", "[FilesManager]" )
         fm.RmAllFiles();
     }
 
+    SECTION( "Double access results in busy error" )
+    {
+        std::string f_uuid;
+        {
+            auto res = fm.NewTmpFilesResource();
+            auto err = res.Initialize(100, "write and get offset");
+            CHECK(err == static_cast<std::errc>(0));
+            f_uuid = res.Uuid();
+
+            auto [res2, fres2] = fm.GetFileResource(f_uuid);
+            CHECK(res2 == std::errc::device_or_resource_busy);
+            fm.Persist(res);
+        }
+        {
+            auto [res, fres] = fm.GetFileResource(f_uuid);
+            const auto md = fres.GetMetadata();
+            CHECK(md.offset == 0);
+            CHECK(md.length == 100);
+            CHECK(md.comment.compare("write and get offset") == 0);
+
+            auto [res2, fres2] = fm.GetFileResource(f_uuid);
+            CHECK(res2 == std::errc::device_or_resource_busy);
+        }
+        CHECK(fm.RmAllFiles() == 1);
+    }
+
     fm.RmAllFiles();
 }
 
