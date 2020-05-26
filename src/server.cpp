@@ -16,7 +16,8 @@ using tcp = asio::ip::tcp;
 namespace tus
 {
 
-static TusManager tus_("files");
+static FilesManager fm("files");
+static TusManager tus_(fm);
 
 
 class HttpConnection : public std::enable_shared_from_this<HttpConnection>

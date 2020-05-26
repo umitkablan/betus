@@ -13,7 +13,7 @@ namespace tus
 
 class TusManager
 {
-    FilesManager files_man_;
+    FilesManager& files_man_;
 
 public:
     static const std::string TAG_TUS_RESUMABLE;
@@ -34,7 +34,7 @@ public:
     static const std::string TUS_SUPPORTED_MAXSZ;
     static const std::string PATCH_EXPECTED_CONTENT_TYPE;
 
-    TusManager(const std::string& dirpath) : files_man_(dirpath) {}
+    TusManager(FilesManager& fm) : files_man_(fm) {}
 
     boost::beast::http::response<boost::beast::http::dynamic_body> MakeResponse(const boost::beast::http::request<boost::beast::http::dynamic_body>& req);
 

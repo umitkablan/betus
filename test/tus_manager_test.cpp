@@ -14,6 +14,7 @@
 namespace beast = boost::beast;
 namespace http = beast::http;
 
+using tus::FilesManager;
 using tus::TusManager;
 
 namespace
@@ -38,7 +39,8 @@ void Fill_Req(http::request<http::dynamic_body>& req, const std::string_view& co
 
 TEST_CASE("Basic", "[TusManager]")
 {
-    TusManager tm(".");
+    FilesManager fm(".");
+    TusManager tm(fm);
 
     SECTION("GET is invalid")
     {
@@ -57,7 +59,8 @@ TEST_CASE("Basic", "[TusManager]")
 
 TEST_CASE("OPTIONS", "[TusManager]")
 {
-    TusManager tm(".");
+    FilesManager fm(".");
+    TusManager tm(fm);
 
     SECTION("Wrong root")
     {
@@ -97,7 +100,8 @@ TEST_CASE("POST", "[TusManager]")
 {
     SECTION("Resource directory is not writable")
     {
-        TusManager tm("/");
+        FilesManager fm("/");
+        TusManager tm(fm);
         http::request<http::dynamic_body> req{http::verb::post, "/files", 11};
         Fill_Req(req);
         req.set("Upload-Length", 12);
@@ -111,7 +115,8 @@ TEST_CASE("POST", "[TusManager]")
         REQUIRE(tm.DeleteAllFiles() == 0);
     }
 
-    TusManager tm(".");
+    FilesManager fm(".");
+    TusManager tm(fm);
 
     SECTION("Wrong root")
     {
@@ -194,7 +199,8 @@ TEST_CASE("POST", "[TusManager]")
 
 TEST_CASE("HEAD", "[TusManager]")
 {
-    TusManager tm(".");
+    FilesManager fm(".");
+    TusManager tm(fm);
 
     http::request<http::dynamic_body> poreq{http::verb::post, "/files", 11};
     Fill_Req(poreq);
@@ -267,7 +273,8 @@ TEST_CASE("HEAD", "[TusManager]")
 
 TEST_CASE("PATCH", "[TusManager]")
 {
-    TusManager tm(".");
+    FilesManager fm(".");
+    TusManager tm(fm);
 
     http::request<http::dynamic_body> poreq{http::verb::post, "/files", 11};
     Fill_Req(poreq);
@@ -485,7 +492,8 @@ TEST_CASE("PATCH", "[TusManager]")
 
 TEST_CASE("Checksum", "[TusManager]")
 {
-    TusManager tm(".");
+    FilesManager fm(".");
+    TusManager tm(fm);
 
     http::request<http::dynamic_body> poreq{http::verb::post, "/files", 11};
     Fill_Req(poreq);
@@ -659,7 +667,8 @@ TEST_CASE("Checksum", "[TusManager]")
 
 TEST_CASE("Terminate Extension", "[TusManager]")
 {
-    TusManager tm(".");
+    FilesManager fm(".");
+    TusManager tm(fm);
 
     SECTION("File Not Found")
     {

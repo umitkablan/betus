@@ -31,6 +31,7 @@ target_link_libraries(betusd Threads::Threads Boost::Boost)
 
 enable_testing()
 find_package(Catch2 REQUIRED)
+
 add_executable(betest test/files_manager_test.cpp test/tus_manager_test.cpp src/files_manager.cpp src/tus_manager.cpp)
 target_compile_options(betest PRIVATE -Wall -Wextra -Werror)
 target_compile_options(betest PUBLIC -std=c++17)

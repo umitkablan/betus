@@ -100,7 +100,7 @@ class FilesManager
 public:
     static const std::string METADATA_FNAME_SUFFIX;
 
-    FilesManager(const std::string& dirpath) : dirpath_(dirpath) {}
+    explicit FilesManager(const std::string& dirpath) : dirpath_(dirpath) {}
 
     TmpFilesResource NewTmpFilesResource();
     void Persist(TmpFilesResource& tmpres);
