@@ -10,6 +10,7 @@
 #include <string_view>
 
 #include <catch2/catch.hpp>
+#include <system_error>
 
 namespace beast = boost::beast;
 namespace http = beast::http;
@@ -229,6 +230,20 @@ TEST_CASE("HEAD", "[TusManager]")
         REQUIRE(resp.count("Upload-Offset") == 1);
         CHECK(resp.at("Upload-Offset") == "0");
     }
+    SECTION("Resource is busy")
+    {
+        http::request<http::dynamic_body> req{http::verb::head, location, 11 };
+        Fill_Req(req);
+
+        const auto [res, fres] = fm.GetFileResource(location.substr(strlen("/files/")));
+        CHECK(!std::make_error_code(res));
+        CHECK(fres.IsOpen());
+
+        const auto resp = tm.MakeResponse(req);
+        REQUIRE(resp.result_int() == 409);
+        Check_Tus_Header_NoContent(resp);
+        REQUIRE(resp.count("Upload-Offset") == 0);
+    }
     SECTION("No such resource")
     {
         http::request<http::dynamic_body> req{http::verb::head, location + "_NOT_FOUND", 11 };
@@ -438,6 +453,33 @@ TEST_CASE("PATCH", "[TusManager]")
         CHECK(resp.result_int() == 500);
         Check_Tus_Header_NoContent(resp);
         REQUIRE(tm.DeleteAllFiles() == 1);
+    }
+
+    SECTION("Resource is busy")
+    {
+        const auto [res, fres] = fm.GetFileResource(location.substr(strlen("/files/")));
+        CHECK(!std::make_error_code(res));
+        CHECK(fres.IsOpen());
+
+        http::request<http::dynamic_body> req{http::verb::patch, location, 11 };
+        Fill_Req(req, "application/offset+octet-stream");
+        req.set("Upload-Offset", "0");
+
+        const char* hwstr = "Hello World";
+        req.content_length(strlen(hwstr));
+
+        beast::multi_buffer mb(100);
+        auto mutable_bufs = mb.prepare(strlen(hwstr));
+        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
+        memcpy(dat, hwstr, strlen(hwstr));
+        mb.commit(strlen(hwstr));
+
+        req.body() = mb;
+
+        const auto resp = tm.MakeResponse(req);
+        REQUIRE(resp.result_int() == 409);
+        Check_Tus_Header_NoContent(resp);
+        REQUIRE(resp.count("Upload-Offset") == 0);
     }
 
     SECTION("Correct - two loads")
@@ -699,35 +741,51 @@ TEST_CASE("Terminate Extension", "[TusManager]")
         REQUIRE(resp.result_int() == 400);
     }
 
-    SECTION("Success terminate with Initial Content")
+    http::request<http::dynamic_body> req{http::verb::post, "/files", 11};
+    Fill_Req(req, "application/offset+octet-stream");
+    req.set("Upload-Length", 11); // hello world
+    req.set("Upload-Offset", "0");
+
+    const char* hwstr = "hello world";
+    beast::multi_buffer mb(100);
+    auto mutable_bufs = mb.prepare(strlen(hwstr));
+    char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
+    memcpy(dat, hwstr, strlen(hwstr));
+    mb.commit(strlen(hwstr));
+
+    req.body() = mb;
+    req.content_length(strlen(hwstr));
+
+    const auto resp = tm.MakeResponse(req);
+    CHECK(resp.result_int() == 201);
+    Check_Tus_Header_NoContent(resp);
+
+    REQUIRE(resp.count("location") == 1);
+    const auto locsw = resp.at("location");
+    auto pos = locsw.find("://");
+    REQUIRE(pos != std::string::npos);
+    auto it = std::find(locsw.begin() + pos + 3, locsw.end(), '/');
+    REQUIRE(it != locsw.end());
+    std::string location(it, locsw.end());
+
+    SECTION("Resource is busy")
     {
-        http::request<http::dynamic_body> req{http::verb::post, "/files", 11};
-        Fill_Req(req, "application/offset+octet-stream");
-        req.set("Upload-Length", 11); // hello world
-        req.set("Upload-Offset", "0");
+        const auto [res, fres] = fm.GetFileResource(location.substr(strlen("/files/")));
+        CHECK(!std::make_error_code(res));
+        REQUIRE(fres.IsOpen());
 
-        const char* hwstr = "hello world";
-        beast::multi_buffer mb(100);
-        auto mutable_bufs = mb.prepare(strlen(hwstr));
-        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
-        memcpy(dat, hwstr, strlen(hwstr));
-        mb.commit(strlen(hwstr));
-
-        req.body() = mb;
-        req.content_length(strlen(hwstr));
+        http::request<http::dynamic_body> req{http::verb::delete_, location, 11};
+        Fill_Req(req);
+        req.content_length(0);
 
         const auto resp = tm.MakeResponse(req);
-        CHECK(resp.result_int() == 201);
+
+        CHECK(resp.result_int() == 409);
         Check_Tus_Header_NoContent(resp);
+    }
 
-        REQUIRE(resp.count("location") == 1);
-        const auto locsw = resp.at("location");
-        auto pos = locsw.find("://");
-        REQUIRE(pos != std::string::npos);
-        auto it = std::find(locsw.begin() + pos + 3, locsw.end(), '/');
-        REQUIRE(it != locsw.end());
-        std::string location(it, locsw.end());
-
+    SECTION("Success")
+    {
         { // Send delete to rm file: Found and Terminated
             http::request<http::dynamic_body> req{http::verb::delete_, location, 11};
             Fill_Req(req);
