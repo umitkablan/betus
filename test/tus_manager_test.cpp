@@ -36,6 +36,70 @@ void Fill_Req(http::request<http::dynamic_body>& req, const std::string_view& co
         req.set(http::field::content_type, content_type);
     req.set("Tus-Resumable", "1.0.0");
 }
+
+std::string Load_File_Via_Tus(TusManager& tm)
+{
+    http::request<http::dynamic_body> req{http::verb::post, "/files", 11};
+    Fill_Req(req, "application/offset+octet-stream");
+    req.set("Upload-Length", 11); // hello world
+    req.set("Upload-Offset", "0");
+
+    const char* hwstr = "hello world";
+    beast::multi_buffer mb(100);
+    auto mutable_bufs = mb.prepare(strlen(hwstr));
+    char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
+    memcpy(dat, hwstr, strlen(hwstr));
+    mb.commit(strlen(hwstr));
+
+    req.body() = mb;
+    req.content_length(strlen(hwstr));
+
+    const auto resp = tm.MakeResponse(req);
+    CHECK(resp.result_int() == 201);
+    Check_Tus_Header_NoContent(resp);
+
+    REQUIRE(resp.count("location") == 1);
+    const auto locsw = resp.at("location");
+    auto pos = locsw.find("://");
+    REQUIRE(pos != std::string::npos);
+    auto it = std::find(locsw.begin() + pos + 3, locsw.end(), '/');
+    REQUIRE(it != locsw.end());
+
+    return std::string(it, locsw.end());
+}
+
+void Attach_Content_To_Req(http::request<http::dynamic_body>& req, const char *hwstr)
+{
+    req.content_length(strlen(hwstr));
+
+    beast::multi_buffer mb(100);
+    auto mutable_bufs = mb.prepare(strlen(hwstr));
+    char *dat = static_cast<char *>((*mutable_bufs.begin()).data());
+    memcpy(dat, hwstr, strlen(hwstr));
+    mb.commit(strlen(hwstr));
+
+    req.body() = mb;
+}
+
+std::string Reserve_Location_Via_Tus(TusManager& tm, size_t total_len)
+{
+    http::request<http::dynamic_body> req{http::verb::post, "/files", 11};
+    Fill_Req(req);
+    req.set("Upload-Length", total_len);
+
+    const auto poresp = tm.MakeResponse(req);
+    CHECK(poresp.result_int() == 201);
+    Check_Tus_Header_NoContent(poresp);
+
+    REQUIRE(poresp.count("location") == 1);
+    const auto locsw = poresp.at("location");
+    auto pos = locsw.find("://");
+    REQUIRE(pos != std::string::npos);
+    auto it = std::find(locsw.begin() + pos + 3, locsw.end(), '/');
+    REQUIRE(it != locsw.end());
+
+    return std::string(it, locsw.end());
+}
 }
 
 TEST_CASE("Basic", "[TusManager]")
@@ -161,17 +225,7 @@ TEST_CASE("POST", "[TusManager]")
     SECTION("no content_type for initial load within")
     {
         req.set("Upload-Length", 12);
-
-        const char* hwstr = "Hello";
-        req.content_length(strlen(hwstr));
-
-        beast::multi_buffer mb(100);
-        auto mutable_bufs = mb.prepare(strlen(hwstr));
-        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
-        memcpy(dat, hwstr, strlen(hwstr));
-        mb.commit(strlen(hwstr));
-
-        req.body() = mb;
+        Attach_Content_To_Req(req, "Hello");
 
         const auto resp = tm.MakeResponse(req);
         CHECK(resp.result_int() == 415);
@@ -203,21 +257,7 @@ TEST_CASE("HEAD", "[TusManager]")
     FilesManager fm(".");
     TusManager tm(fm);
 
-    http::request<http::dynamic_body> poreq{http::verb::post, "/files", 11};
-    Fill_Req(poreq);
-    poreq.set("Upload-Length", 12);
-
-    const auto poresp = tm.MakeResponse(poreq);
-    CHECK(poresp.result_int() == 201);
-    Check_Tus_Header_NoContent(poresp);
-
-    REQUIRE(poresp.count("location") == 1);
-    const auto locsw = poresp.at("location");
-    auto pos = locsw.find("://");
-    REQUIRE(pos != std::string::npos);
-    auto it = std::find(locsw.begin() + pos + 3, locsw.end(), '/');
-    REQUIRE(it != locsw.end());
-    std::string location(it, locsw.end());
+    const auto location = Reserve_Location_Via_Tus(tm, 12);
 
     SECTION("Success")
     {
@@ -291,38 +331,14 @@ TEST_CASE("PATCH", "[TusManager]")
     FilesManager fm(".");
     TusManager tm(fm);
 
-    http::request<http::dynamic_body> poreq{http::verb::post, "/files", 11};
-    Fill_Req(poreq);
-    poreq.set("Upload-Length", 11); // hello world
-
-    const auto poresp = tm.MakeResponse(poreq);
-    CHECK(poresp.result_int() == 201);
-    Check_Tus_Header_NoContent(poresp);
-
-    REQUIRE(poresp.count("location") == 1);
-    const auto locsw = poresp.at("location");
-    auto pos = locsw.find("://");
-    REQUIRE(pos != std::string::npos);
-    auto it = std::find(locsw.begin() + pos + 3, locsw.end(), '/');
-    REQUIRE(it != locsw.end());
-    std::string location(it, locsw.end());
+    const auto location = Reserve_Location_Via_Tus(tm, 11); // "hello world" length
 
     SECTION("To a non-existing resource")
     {
         http::request<http::dynamic_body> req{http::verb::patch, location + "-123a", 11};
         Fill_Req(req, "application/offset+octet-stream");
         req.set("Upload-Offset", "0");
-
-        const char* hwstr = "Hello Sunny World!";
-        req.content_length(strlen(hwstr));
-
-        beast::multi_buffer mb(100);
-        auto mutable_bufs = mb.prepare(strlen(hwstr));
-        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
-        memcpy(dat, hwstr, strlen(hwstr));
-        mb.commit(strlen(hwstr));
-
-        req.body() = mb;
+        Attach_Content_To_Req(req, "Hello Sunny World!");
 
         const auto resp = tm.MakeResponse(req);
 
@@ -336,17 +352,7 @@ TEST_CASE("PATCH", "[TusManager]")
         http::request<http::dynamic_body> req{http::verb::patch, location, 11};
         Fill_Req(req, "application/offset+octet-stream");
         req.set("Upload-Offset", "0");
-
-        const char* hwstr = "Hello Sunny World!";
-        req.content_length(strlen(hwstr));
-
-        beast::multi_buffer mb(100);
-        auto mutable_bufs = mb.prepare(strlen(hwstr));
-        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
-        memcpy(dat, hwstr, strlen(hwstr));
-        mb.commit(strlen(hwstr));
-
-        req.body() = mb;
+        Attach_Content_To_Req(req, "Hello Sunny World!");
 
         const auto resp = tm.MakeResponse(req);
 
@@ -360,17 +366,7 @@ TEST_CASE("PATCH", "[TusManager]")
         http::request<http::dynamic_body> req{http::verb::patch, location, 11};
         Fill_Req(req, "application/offset+octet-stream");
         req.set("Upload-Offset", "1");
-
-        const char* hwstr = "Hello Word"; // We are sending offset 1, 1 less char here
-        req.content_length(strlen(hwstr));
-
-        beast::multi_buffer mb(100);
-        auto mutable_bufs = mb.prepare(strlen(hwstr));
-        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
-        memcpy(dat, hwstr, strlen(hwstr));
-        mb.commit(strlen(hwstr));
-
-        req.body() = mb;
+        Attach_Content_To_Req(req, "Hello Word"); // We are sending offset 1, 1 less char here
 
         const auto resp = tm.MakeResponse(req);
 
@@ -384,17 +380,7 @@ TEST_CASE("PATCH", "[TusManager]")
         http::request<http::dynamic_body> req{http::verb::patch, location, 11};
         Fill_Req(req, "application/offset+json");
         req.set("Upload-Offset", "0");
-
-        const char* hwstr = "Hello World";
-        req.content_length(strlen(hwstr));
-
-        beast::multi_buffer mb(100);
-        auto mutable_bufs = mb.prepare(strlen(hwstr));
-        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
-        memcpy(dat, hwstr, strlen(hwstr));
-        mb.commit(strlen(hwstr));
-
-        req.body() = mb;
+        Attach_Content_To_Req(req, "Hello World");
 
         const auto resp = tm.MakeResponse(req);
 
@@ -407,17 +393,7 @@ TEST_CASE("PATCH", "[TusManager]")
     {
         http::request<http::dynamic_body> req{http::verb::patch, location, 11};
         Fill_Req(req, "application/offset+octet-stream");
-
-        const char* hwstr = "Hello World";
-        req.content_length(strlen(hwstr));
-
-        beast::multi_buffer mb(100);
-        auto mutable_bufs = mb.prepare(strlen(hwstr));
-        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
-        memcpy(dat, hwstr, strlen(hwstr));
-        mb.commit(strlen(hwstr));
-
-        req.body() = mb;
+        Attach_Content_To_Req(req, "Hello World");
 
         const auto resp = tm.MakeResponse(req);
 
@@ -436,17 +412,7 @@ TEST_CASE("PATCH", "[TusManager]")
         http::request<http::dynamic_body> req{http::verb::patch, location, 11};
         Fill_Req(req, "application/offset+octet-stream");
         req.set("Upload-Offset", "0");
-
-        const char* hwstr = "Hello World";
-        req.content_length(strlen(hwstr));
-
-        beast::multi_buffer mb(100);
-        auto mutable_bufs = mb.prepare(strlen(hwstr));
-        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
-        memcpy(dat, hwstr, strlen(hwstr));
-        mb.commit(strlen(hwstr));
-
-        req.body() = mb;
+        Attach_Content_To_Req(req, "Hello World");
 
         const auto resp = tm.MakeResponse(req);
 
@@ -464,17 +430,7 @@ TEST_CASE("PATCH", "[TusManager]")
         http::request<http::dynamic_body> req{http::verb::patch, location, 11 };
         Fill_Req(req, "application/offset+octet-stream");
         req.set("Upload-Offset", "0");
-
-        const char* hwstr = "Hello World";
-        req.content_length(strlen(hwstr));
-
-        beast::multi_buffer mb(100);
-        auto mutable_bufs = mb.prepare(strlen(hwstr));
-        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
-        memcpy(dat, hwstr, strlen(hwstr));
-        mb.commit(strlen(hwstr));
-
-        req.body() = mb;
+        Attach_Content_To_Req(req, "Hello World");
 
         const auto resp = tm.MakeResponse(req);
         REQUIRE(resp.result_int() == 409);
@@ -489,17 +445,7 @@ TEST_CASE("PATCH", "[TusManager]")
 
         {
             req.set("Upload-Offset", "0");
-
-            const char *hwstr = "Hello ";
-            req.content_length(strlen(hwstr));
-
-            beast::multi_buffer mb(100);
-            auto mutable_bufs = mb.prepare(strlen(hwstr));
-            char *dat = static_cast<char *>((*mutable_bufs.begin()).data());
-            memcpy(dat, hwstr, strlen(hwstr));
-            mb.commit(strlen(hwstr));
-
-            req.body() = mb;
+            Attach_Content_To_Req(req, "Hello ");
 
             const auto resp = tm.MakeResponse(req);
 
@@ -510,17 +456,7 @@ TEST_CASE("PATCH", "[TusManager]")
         }
         {
             req.set("Upload-Offset", "6");
-
-            const char *hwstr = "World";
-            req.content_length(strlen(hwstr));
-
-            beast::multi_buffer mb(100);
-            auto mutable_bufs = mb.prepare(strlen(hwstr));
-            char *dat = static_cast<char *>((*mutable_bufs.begin()).data());
-            memcpy(dat, hwstr, strlen(hwstr));
-            mb.commit(strlen(hwstr));
-
-            req.body() = mb;
+            Attach_Content_To_Req(req, "World");
 
             const auto resp = tm.MakeResponse(req);
 
@@ -537,21 +473,7 @@ TEST_CASE("Checksum", "[TusManager]")
     FilesManager fm(".");
     TusManager tm(fm);
 
-    http::request<http::dynamic_body> poreq{http::verb::post, "/files", 11};
-    Fill_Req(poreq);
-    poreq.set("Upload-Length", 11); // hello world
-
-    const auto poresp = tm.MakeResponse(poreq);
-    CHECK(poresp.result_int() == 201);
-    Check_Tus_Header_NoContent(poresp);
-
-    REQUIRE(poresp.count("location") == 1);
-    const auto locsw = poresp.at("location");
-    auto pos = locsw.find("://");
-    REQUIRE(pos != std::string::npos);
-    auto it = std::find(locsw.begin() + pos + 3, locsw.end(), '/');
-    REQUIRE(it != locsw.end());
-    std::string location(it, locsw.end());
+    const auto location = Reserve_Location_Via_Tus(tm, 11); // "hello world" length
 
     SECTION("Wrong Checksum Algorithm")
     {
@@ -559,17 +481,7 @@ TEST_CASE("Checksum", "[TusManager]")
         Fill_Req(req, "application/offset+octet-stream");
         req.set("Upload-Offset", "0");
         req.set("Upload-Checksum", "md5 XrY7u+Ae7tCTyyK7j1rNww=="); //echo -n "hello world" | md5sum | xxd -r -p | base64
-
-        const char* hwstr = "hello world";
-        req.content_length(strlen(hwstr));
-
-        beast::multi_buffer mb(100);
-        auto mutable_bufs = mb.prepare(strlen(hwstr));
-        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
-        memcpy(dat, hwstr, strlen(hwstr));
-        mb.commit(strlen(hwstr));
-
-        req.body() = mb;
+        Attach_Content_To_Req(req, "hello world");
 
         const auto resp = tm.MakeResponse(req);
 
@@ -584,17 +496,7 @@ TEST_CASE("Checksum", "[TusManager]")
         Fill_Req(req, "application/offset+octet-stream");
         req.set("Upload-Offset", "0");
         req.set("Upload-Checksum", "sha1 XrY7u+Ae7tCTyyK7j1rNww=="); //echo -n "hello world" | md5sum | xxd -r -p | base64
-
-        const char* hwstr = "hello world";
-        req.content_length(strlen(hwstr));
-
-        beast::multi_buffer mb(100);
-        auto mutable_bufs = mb.prepare(strlen(hwstr));
-        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
-        memcpy(dat, hwstr, strlen(hwstr));
-        mb.commit(strlen(hwstr));
-
-        req.body() = mb;
+        Attach_Content_To_Req(req, "hello world");
 
         const auto resp = tm.MakeResponse(req);
 
@@ -609,17 +511,7 @@ TEST_CASE("Checksum", "[TusManager]")
         Fill_Req(req, "application/offset+octet-stream");
         req.set("Upload-Offset", "0");
         req.set("Upload-Checksum", "sha1 Kq5sNclPz7QV2+lfQIuc6R7oRu0=");
-
-        const char* hwstr = "Hello word!";
-        req.content_length(strlen(hwstr));
-
-        beast::multi_buffer mb(100);
-        auto mutable_bufs = mb.prepare(strlen(hwstr));
-        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
-        memcpy(dat, hwstr, strlen(hwstr));
-        mb.commit(strlen(hwstr));
-
-        req.body() = mb;
+        Attach_Content_To_Req(req, "Hello word!");
 
         const auto resp = tm.MakeResponse(req);
 
@@ -634,17 +526,7 @@ TEST_CASE("Checksum", "[TusManager]")
         Fill_Req(req, "application/offset+octet-stream");
         req.set("Upload-Offset", "0");
         req.set("Upload-Checksum", "sha1 Kq5sNclPz7QV2+lfQIuc6R7oRu0=");
-
-        const char* hwstr = "hello world";
-        req.content_length(strlen(hwstr));
-
-        beast::multi_buffer mb(100);
-        auto mutable_bufs = mb.prepare(strlen(hwstr));
-        char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
-        memcpy(dat, hwstr, strlen(hwstr));
-        mb.commit(strlen(hwstr));
-
-        req.body() = mb;
+        Attach_Content_To_Req(req, "hello world");
 
         const auto resp = tm.MakeResponse(req);
 
@@ -661,17 +543,7 @@ TEST_CASE("Checksum", "[TusManager]")
         {
             req.set("Upload-Offset", "0");
             req.set("Upload-Checksum", "sha1 xNhxrROtAP3pp7t/9+0lQ67FQkE="); // echo -n "hello " | sha1sum | xxd -r -p | base64
-
-            const char *hwstr = "hello ";
-            req.content_length(strlen(hwstr));
-
-            beast::multi_buffer mb(100);
-            auto mutable_bufs = mb.prepare(strlen(hwstr));
-            char *dat = static_cast<char *>((*mutable_bufs.begin()).data());
-            memcpy(dat, hwstr, strlen(hwstr));
-            mb.commit(strlen(hwstr));
-
-            req.body() = mb;
+            Attach_Content_To_Req(req, "hello ");
 
             const auto resp = tm.MakeResponse(req);
 
@@ -683,17 +555,7 @@ TEST_CASE("Checksum", "[TusManager]")
         {
             req.set("Upload-Offset", "6");
             req.set("Upload-Checksum", "sha1 fCEUM/AgcVl3Qeb/Wo6jR4mrv0M="); // echo -n "world" | sha1sum | xxd -r -p | base64
-
-            const char *hwstr = "world";
-            req.content_length(strlen(hwstr));
-
-            beast::multi_buffer mb(100);
-            auto mutable_bufs = mb.prepare(strlen(hwstr));
-            char *dat = static_cast<char *>((*mutable_bufs.begin()).data());
-            memcpy(dat, hwstr, strlen(hwstr));
-            mb.commit(strlen(hwstr));
-
-            req.body() = mb;
+            Attach_Content_To_Req(req, "world");
 
             const auto resp = tm.MakeResponse(req);
 
@@ -725,48 +587,13 @@ TEST_CASE("Terminate Extension", "[TusManager]")
     {
         http::request<http::dynamic_body> req{http::verb::delete_, "/files/aaaa-bbbb-cccc", 11};
         Fill_Req(req);
-
-        const char *hwstr = "world";
-        req.content_length(strlen(hwstr));
-
-        beast::multi_buffer mb(100);
-        auto mutable_bufs = mb.prepare(strlen(hwstr));
-        char *dat = static_cast<char *>((*mutable_bufs.begin()).data());
-        memcpy(dat, hwstr, strlen(hwstr));
-        mb.commit(strlen(hwstr));
-
-        req.body() = mb;
+        Attach_Content_To_Req(req, "hello world");
 
         const auto resp = tm.MakeResponse(req);
         REQUIRE(resp.result_int() == 400);
     }
 
-    http::request<http::dynamic_body> req{http::verb::post, "/files", 11};
-    Fill_Req(req, "application/offset+octet-stream");
-    req.set("Upload-Length", 11); // hello world
-    req.set("Upload-Offset", "0");
-
-    const char* hwstr = "hello world";
-    beast::multi_buffer mb(100);
-    auto mutable_bufs = mb.prepare(strlen(hwstr));
-    char* dat = static_cast<char*>((*mutable_bufs.begin()).data());
-    memcpy(dat, hwstr, strlen(hwstr));
-    mb.commit(strlen(hwstr));
-
-    req.body() = mb;
-    req.content_length(strlen(hwstr));
-
-    const auto resp = tm.MakeResponse(req);
-    CHECK(resp.result_int() == 201);
-    Check_Tus_Header_NoContent(resp);
-
-    REQUIRE(resp.count("location") == 1);
-    const auto locsw = resp.at("location");
-    auto pos = locsw.find("://");
-    REQUIRE(pos != std::string::npos);
-    auto it = std::find(locsw.begin() + pos + 3, locsw.end(), '/');
-    REQUIRE(it != locsw.end());
-    std::string location(it, locsw.end());
+    const auto location = Load_File_Via_Tus(tm);
 
     SECTION("Resource is busy")
     {
