@@ -8,9 +8,9 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 #include <catch2/catch.hpp>
-#include <system_error>
 
 namespace beast = boost::beast;
 namespace http = beast::http;
@@ -466,6 +466,8 @@ TEST_CASE("PATCH", "[TusManager]")
 
         REQUIRE(tm.DeleteAllFiles() == 1);
     }
+
+    tm.DeleteAllFiles();
 }
 
 TEST_CASE("Checksum", "[TusManager]")
